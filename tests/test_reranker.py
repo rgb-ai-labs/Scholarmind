@@ -83,3 +83,44 @@ def test_rerank_does_not_mutate_scores():
 
     for c in result:
         assert c.score == original_scores[c.paper_id]
+
+
+def test_rerank_with_scores_sorted_descending_and_consistent_with_rerank():
+    settings = Settings()
+    reranker = Reranker(settings.reranker_model)
+
+    candidates = [
+        _result("p1", "Page layout and margins in document typesetting conventions.", 0.5),
+        _result(
+            "p2",
+            "Hallucination in language models occurs when the model generates "
+            "factually incorrect or unsupported content not grounded in its training data.",
+            0.1,
+        ),
+        _result("p3", "A brief history of typewriter keyboard layouts.", 0.4),
+    ]
+    query = "what causes hallucination in language models"
+
+    scored = reranker.rerank_with_scores(query, candidates, top_k=3)
+
+    assert len(scored) == 3
+    for item in scored:
+        assert isinstance(item, tuple)
+        candidate, score = item
+        assert isinstance(candidate, DenseResult)
+        assert isinstance(score, float)
+
+    scores = [score for _, score in scored]
+    assert scores == sorted(scores, reverse=True)
+
+    reranked = reranker.rerank(query, candidates, top_k=3)
+    assert reranked == [candidate for candidate, _ in scored]
+
+
+def test_rerank_with_scores_empty_candidates_returns_empty_list():
+    settings = Settings()
+    reranker = Reranker(settings.reranker_model)
+
+    result = reranker.rerank_with_scores("anything", [], top_k=5)
+
+    assert result == []

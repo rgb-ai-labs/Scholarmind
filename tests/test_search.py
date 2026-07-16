@@ -39,3 +39,45 @@ def test_search_returns_empty_list_when_nothing_ingested(tmp_path: Path):
     results = search("anything", settings)
 
     assert results == []
+
+
+def test_search_default_threshold_still_returns_relevant_results(tmp_path: Path):
+    settings = Settings(
+        qdrant_path=str(tmp_path / "qdrant"),
+        qdrant_collection="test_search_default_threshold_chunks",
+    )
+
+    run_ingestion(FIXTURE_PATH, settings)
+
+    results = search("retrieval augmented generation", settings)
+
+    assert results != []
+
+
+def test_search_high_threshold_filters_out_all_results(tmp_path: Path):
+    settings = Settings(
+        qdrant_path=str(tmp_path / "qdrant"),
+        qdrant_collection="test_search_high_threshold_chunks",
+        retrieval_min_rerank_score=100.0,
+    )
+
+    run_ingestion(FIXTURE_PATH, settings)
+
+    results = search("retrieval augmented generation", settings)
+
+    assert results == []
+
+
+def test_search_irrelevant_query_returns_empty_with_default_threshold(tmp_path: Path):
+    settings = Settings(
+        qdrant_path=str(tmp_path / "qdrant"),
+        qdrant_collection="test_search_irrelevant_query_chunks",
+    )
+
+    run_ingestion(FIXTURE_PATH, settings)
+
+    results = search(
+        "what is the best way to grill a steak for a summer barbecue", settings
+    )
+
+    assert results == []

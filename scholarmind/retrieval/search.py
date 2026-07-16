@@ -34,4 +34,12 @@ def search(query: str, settings: "Settings | None" = None) -> list[DenseResult]:
 
     reranker = Reranker(settings.reranker_model)
 
-    return reranker.rerank(query, hybrid_candidates, settings.retrieval_top_k)
+    scored = reranker.rerank_with_scores(
+        query, hybrid_candidates, settings.retrieval_top_k
+    )
+
+    return [
+        candidate
+        for candidate, score in scored
+        if score >= settings.retrieval_min_rerank_score
+    ]
