@@ -9,11 +9,13 @@ class Settings(BaseSettings):
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     llm_api_key: str = ""
-    llm_model: str = "gpt-4o-mini"
+    llm_model: str = "google/gemma-4-26b-a4b-it:free"
+    llm_base_url: str = "https://openrouter.ai/api/v1"
     chunk_size: int = 800
     chunk_overlap: int = 150
     retrieval_candidate_k: int = 20
     retrieval_top_k: int = 5
+    llm_max_tokens: int = 512
 
 
 def get_settings() -> Settings:
