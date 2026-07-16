@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from scholarmind.agents.llm_client import OpenRouterClient
@@ -9,6 +10,8 @@ from scholarmind.config import Settings, get_settings
 from scholarmind.ingestion.pipeline import run_ingestion
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "sample_paper.pdf"
+
+_has_llm_key = bool(get_settings().llm_api_key)
 
 
 class FakeLLMClient:
@@ -75,6 +78,7 @@ def test_answer_question_with_out_of_range_citation(tmp_path: Path):
     assert result.answer.citations[0].index == 1
 
 
+@pytest.mark.skipif(not _has_llm_key, reason="LLM_API_KEY not configured")
 def test_answer_question_real_end_to_end(tmp_path: Path):
     settings = Settings(
         qdrant_path=str(tmp_path / "qdrant"),
