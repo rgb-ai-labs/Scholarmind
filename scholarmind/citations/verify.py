@@ -16,6 +16,7 @@ class Citation:
     section: str | None
     page_start: int
     page_end: int
+    text: str
 
 
 @dataclass
@@ -71,6 +72,7 @@ def verify_citations(text: str, sources: list["DenseResult"]) -> VerifiedAnswer:
                     section=source.section,
                     page_start=source.page_start,
                     page_end=source.page_end,
+                    text=source.text,
                 )
             )
         else:
