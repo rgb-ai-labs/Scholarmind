@@ -66,6 +66,25 @@ def test_extract_citation_markers_dedupes_first_seen_order():
     assert markers == [1, 2]
 
 
+def test_extract_citation_markers_handles_combined_brackets():
+    markers = extract_citation_markers("Grounding matters [1, 2]. RAG helps [3,4] and [2].")
+
+    assert markers == [1, 2, 3, 4]
+
+
+def test_verify_citations_with_combined_bracket_markers():
+    sources = [
+        _make_result(paper_id="p1"),
+        _make_result(paper_id="p2"),
+        _make_result(paper_id="p3"),
+    ]
+
+    result = verify_citations("Claim one [1, 2]. Claim two [3].", sources)
+
+    assert [c.index for c in result.citations] == [1, 2, 3]
+    assert result.invalid_citation_markers == []
+
+
 def test_verify_citations_with_valid_markers():
     sources = [
         _make_result(paper_id="p1"),

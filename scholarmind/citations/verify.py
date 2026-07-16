@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 from scholarmind.retrieval.dense import DenseResult
 
-_MARKER_PATTERN = re.compile(r"\[(\d+)\]")
+_MARKER_PATTERN = re.compile(r"\[(\d+(?:\s*,\s*\d+)*)\]")
 
 
 @dataclass
@@ -48,9 +48,10 @@ def build_source_block(sources: list["DenseResult"]) -> str:
 def extract_citation_markers(text: str) -> list[int]:
     markers: list[int] = []
     for match in _MARKER_PATTERN.finditer(text):
-        marker = int(match.group(1))
-        if marker not in markers:
-            markers.append(marker)
+        for part in match.group(1).split(","):
+            marker = int(part.strip())
+            if marker not in markers:
+                markers.append(marker)
     return markers
 
 

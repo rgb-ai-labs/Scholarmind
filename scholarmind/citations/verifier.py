@@ -2,7 +2,7 @@ import re
 from dataclasses import dataclass
 
 from scholarmind.agents.llm_client import LLMClient
-from scholarmind.citations.verify import Citation
+from scholarmind.citations.verify import Citation, extract_citation_markers
 
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 
@@ -22,9 +22,12 @@ class ClaimVerification:
 
 
 def extract_claim_for_citation(text: str, citation_index: int) -> str:
-    marker = f"[{citation_index}]"
     sentences = _SENTENCE_SPLIT.split(text)
-    matching = [sentence for sentence in sentences if marker in sentence]
+    matching = [
+        sentence
+        for sentence in sentences
+        if citation_index in extract_citation_markers(sentence)
+    ]
     if not matching:
         return text
     return " ".join(matching)

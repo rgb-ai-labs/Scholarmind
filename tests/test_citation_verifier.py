@@ -57,6 +57,19 @@ def test_extract_claim_for_citation_falls_back_to_whole_text_when_no_match():
     assert claim == text
 
 
+def test_extract_claim_for_citation_handles_combined_brackets():
+    text = (
+        "RAG grounds answers in retrieved passages [3, 4]. "
+        "Grounding every claim builds trust [1, 2]."
+    )
+
+    claim_3 = extract_claim_for_citation(text, 3)
+    claim_1 = extract_claim_for_citation(text, 1)
+
+    assert claim_3 == "RAG grounds answers in retrieved passages [3, 4]."
+    assert claim_1 == "Grounding every claim builds trust [1, 2]."
+
+
 def test_verify_claim_support_supported_true():
     text = "RAG grounds answers in retrieved passages [1]."
     citation = _make_citation(1, text="RAG is a technique that grounds LLM answers in retrieved documents.")
