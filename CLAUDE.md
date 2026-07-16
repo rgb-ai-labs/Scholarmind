@@ -43,10 +43,16 @@ gap-analysis, citation, methodology, writing.)
 - *Store*: upsert vectors + metadata into the embedded Qdrant collection.
 
 **Query (read path):** hybrid-retrieve → rerank → generate-with-citations
-- *Hybrid-retrieve*: combine dense vector search with keyword/BM25-style filtering.
-- *Rerank*: reorder candidates with a local cross-encoder reranker for precision.
+- *Hybrid-retrieve*: dense vector search (`retrieval/dense.py`) and real BM25 sparse search
+  (`retrieval/sparse.py`, an independent full-collection pass, not a re-score of dense's
+  output) run separately, then fuse via Reciprocal Rank Fusion (`retrieval/hybrid.py`).
+- *Rerank*: reorder the fused candidates with a local cross-encoder reranker for precision.
 - *Generate-with-citations*: the LLM answers using only the reranked context, and every
   claim must be traceable to a retrieved chunk's metadata.
+- **Score semantics**: `DenseResult.score` always reflects the chunk's *originating* retrieval
+  method — a dense cosine similarity (~0–1) or a BM25 score (unbounded) — never a fusion or
+  rerank score. These two scales are not comparable to each other; do not render `.score`
+  as a single normalized "relevance %" without accounting for which method produced it.
 
 ## Golden Rule: Never Cite From Memory
 
