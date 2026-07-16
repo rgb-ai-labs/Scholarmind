@@ -23,8 +23,13 @@ def test_load_path_single_pdf_file_returns_list_of_one():
     assert isinstance(docs[0], RawDocument)
 
 
-def test_load_path_directory_returns_list_of_matching_pdfs():
-    docs = load_path(FIXTURE.parent)
+def test_load_path_directory_returns_list_of_matching_pdfs(tmp_path):
+    import shutil
+
+    shutil.copy(FIXTURE, tmp_path / "sample_paper.pdf")
+    (tmp_path / "notes.txt").write_text("not a pdf")
+
+    docs = load_path(tmp_path)
     assert isinstance(docs, list)
     assert len(docs) == 1
     assert docs[0].source_path.name == "sample_paper.pdf"
