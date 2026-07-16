@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from qdrant_client import QdrantClient
 from typer.testing import CliRunner
 
 from scholarmind.cli import app
@@ -9,12 +10,11 @@ from scholarmind.ingestion.pipeline import IngestResult, run_ingestion
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "sample_paper.pdf"
 
 
-def _settings(collection_name: str) -> Settings:
-    return Settings(qdrant_path=":memory:", qdrant_collection=collection_name)
-
-
-def test_run_ingestion_end_to_end_and_idempotent():
-    settings = _settings("test_pipeline_chunks")
+def test_run_ingestion_end_to_end_and_idempotent(tmp_path: Path):
+    settings = Settings(
+        qdrant_path=str(tmp_path / "qdrant"),
+        qdrant_collection="test_pipeline_chunks",
+    )
 
     result = run_ingestion(FIXTURE_PATH, settings)
 
@@ -26,7 +26,12 @@ def test_run_ingestion_end_to_end_and_idempotent():
     second_result = run_ingestion(FIXTURE_PATH, settings)
 
     assert second_result.papers_ingested == 1
+    assert second_result.papers_ingested == result.papers_ingested
     assert second_result.chunks_created == result.chunks_created
+
+    client = QdrantClient(path=str(tmp_path / "qdrant"))
+    count = client.count("test_pipeline_chunks", exact=True).count
+    assert count == result.chunks_created
 
 
 def test_cli_ingest_command_prints_summary(monkeypatch):
