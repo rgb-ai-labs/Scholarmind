@@ -7,6 +7,10 @@ class Embedder:
     def __init__(self, model_name: str) -> None:
         self._model = SentenceTransformer(model_name)
 
+    @property
+    def dimension(self) -> int:
+        return self._model.get_embedding_dimension()
+
     def embed_chunks(self, chunks: list["Chunk"], batch_size: int = 32) -> list[list[float]]:
         if not chunks:
             return []
