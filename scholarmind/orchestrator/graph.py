@@ -13,12 +13,12 @@ def classify_intent(request: str) -> tuple[str, str]:
     stripped = request.strip()
     lower = stripped.lower()
 
+    # future intents: discover, summarize, gap_analysis, cite, methodology, write — add a branch here + a corresponding node
     if lower.startswith("ingest ") and stripped[len("ingest "):].strip():
         return "ingest", stripped[len("ingest "):].strip()
     if lower.endswith(".pdf"):
         return "ingest", stripped
     return "ask", stripped
-    # future intents: discover, summarize, gap_analysis, cite, methodology, write — add a branch here + a corresponding node
 
 
 def build_graph(llm_client: "LLMClient", settings: "Settings"):
@@ -50,7 +50,10 @@ def build_graph(llm_client: "LLMClient", settings: "Settings"):
         }
 
     def qa_node(state: GraphState) -> dict:
-        result = answer_question(state["question"], llm_client, settings)
+        try:
+            result = answer_question(state["question"], llm_client, settings)
+        except Exception as exc:
+            return {"error": str(exc), "messages": ["ask failed"]}
         return {
             "answer_result": result,
             "messages": [f"answered with {result.sources_found} source(s)"],
