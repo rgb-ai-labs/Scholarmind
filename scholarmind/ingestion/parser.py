@@ -1,6 +1,3 @@
-"""Stage 2 of the ingestion pipeline: extract clean text, sections, and
-best-effort bibliographic metadata from a loaded PDF."""
-
 import hashlib
 import re
 from dataclasses import dataclass, field
@@ -39,8 +36,6 @@ class _SectionBuilder:
 
 
 def _join_lines(lines: list[str]) -> str:
-    """Collapse whitespace runs within lines/paragraphs to single spaces,
-    but preserve blank-line paragraph breaks as "\\n\\n"."""
     paragraphs: list[str] = []
     current: list[str] = []
     for line in lines:

@@ -1,5 +1,3 @@
-"""Stage 1 of the ingestion pipeline: load raw text and metadata from PDFs."""
-
 import logging
 from dataclasses import dataclass
 from pathlib import Path
