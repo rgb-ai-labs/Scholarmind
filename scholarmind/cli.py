@@ -3,34 +3,22 @@ from pathlib import Path
 import typer
 
 from scholarmind.agents.llm_client import OpenRouterClient
-from scholarmind.agents.qa import answer_question
+from scholarmind.agents.qa import AnswerResult, answer_question
 from scholarmind.config import get_settings
-from scholarmind.ingestion.pipeline import run_ingestion
+from scholarmind.ingestion.pipeline import IngestResult, run_ingestion
+from scholarmind.orchestrator import run as orchestrator_run
 
 app = typer.Typer(help="ScholarMind: a multi-agent RAG research assistant for PhD students.")
 
 
-@app.command()
-def ingest(path: str = typer.Argument(..., help="Path to a document or directory to ingest.")) -> None:
-    result = run_ingestion(Path(path))
+def _print_ingest_result(result: "IngestResult") -> None:
     typer.echo(
         f"Ingested {result.papers_ingested} paper(s), {result.chunks_created} chunk(s) "
         f"into collection '{result.collection_name}'."
     )
 
 
-@app.command()
-def ask(question: str = typer.Argument(..., help="Research question to ask.")) -> None:
-    settings = get_settings()
-    client = OpenRouterClient(
-        api_key=settings.llm_api_key,
-        base_url=settings.llm_base_url,
-        model=settings.llm_model,
-        max_tokens=settings.llm_max_tokens,
-    )
-
-    result = answer_question(question, client, settings)
-
+def _print_answer_result(result: "AnswerResult", question: str) -> None:
     if result.answer is None:
         typer.echo(f"No relevant sources found for: {question}")
         return
@@ -51,6 +39,40 @@ def ask(question: str = typer.Argument(..., help="Research question to ask.")) -
             f"Note: the model referenced source(s) {markers} which do not exist in the "
             "sources list above and were not included."
         )
+
+
+@app.command()
+def ingest(path: str = typer.Argument(..., help="Path to a document or directory to ingest.")) -> None:
+    result = run_ingestion(Path(path))
+    _print_ingest_result(result)
+
+
+@app.command()
+def ask(question: str = typer.Argument(..., help="Research question to ask.")) -> None:
+    settings = get_settings()
+    client = OpenRouterClient(
+        api_key=settings.llm_api_key,
+        base_url=settings.llm_base_url,
+        model=settings.llm_model,
+        max_tokens=settings.llm_max_tokens,
+    )
+
+    result = answer_question(question, client, settings)
+    _print_answer_result(result, question)
+
+
+@app.command()
+def chat(request: str = typer.Argument(..., help="A request: a question, or a path/'ingest <path>' to ingest.")) -> None:
+    result = orchestrator_run.run(request)
+
+    if result.error is not None:
+        typer.echo(f"Error: {result.error}")
+    elif result.ingest_result is not None:
+        _print_ingest_result(result.ingest_result)
+    elif result.answer_result is not None:
+        _print_answer_result(result.answer_result, result.answer_result.question)
+    else:
+        typer.echo("No result produced.")
 
 
 if __name__ == "__main__":
