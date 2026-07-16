@@ -1,4 +1,5 @@
 from scholarmind.config import Settings, get_settings
+from scholarmind.guardrails import passes_confidence
 from scholarmind.ingestion.embedder import Embedder
 from scholarmind.retrieval.dense import DenseResult, dense_search
 from scholarmind.retrieval.hybrid import hybrid_rank
@@ -41,5 +42,5 @@ def search(query: str, settings: "Settings | None" = None) -> list[DenseResult]:
     return [
         candidate
         for candidate, score in scored
-        if score >= settings.retrieval_min_rerank_score
+        if passes_confidence(score, settings)
     ]

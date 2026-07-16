@@ -1,6 +1,7 @@
 import re
 from dataclasses import dataclass
 
+from scholarmind.guardrails import split_citation_markers
 from scholarmind.retrieval.dense import DenseResult
 
 _MARKER_PATTERN = re.compile(r"\[(\d+(?:\s*,\s*\d+)*)\]")
@@ -57,27 +58,24 @@ def extract_citation_markers(text: str) -> list[int]:
 
 def verify_citations(text: str, sources: list["DenseResult"]) -> VerifiedAnswer:
     markers = extract_citation_markers(text)
-    citations: list[Citation] = []
-    invalid_citation_markers: list[int] = []
+    valid_markers, invalid_citation_markers = split_citation_markers(markers, len(sources))
 
-    for marker in markers:
-        if 1 <= marker <= len(sources):
-            source = sources[marker - 1]
-            citations.append(
-                Citation(
-                    index=marker,
-                    paper_id=source.paper_id,
-                    title=source.title,
-                    authors=source.authors,
-                    year=source.year,
-                    section=source.section,
-                    page_start=source.page_start,
-                    page_end=source.page_end,
-                    text=source.text,
-                )
+    citations: list[Citation] = []
+    for marker in valid_markers:
+        source = sources[marker - 1]
+        citations.append(
+            Citation(
+                index=marker,
+                paper_id=source.paper_id,
+                title=source.title,
+                authors=source.authors,
+                year=source.year,
+                section=source.section,
+                page_start=source.page_start,
+                page_end=source.page_end,
+                text=source.text,
             )
-        else:
-            invalid_citation_markers.append(marker)
+        )
 
     return VerifiedAnswer(
         text=text,
