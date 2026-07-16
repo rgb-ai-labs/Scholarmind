@@ -1,47 +1,35 @@
-from dataclasses import dataclass
-
 from scholarmind.retrieval.dense import DenseResult
 
 
-def keyword_score(query: str, text: str) -> float:
-    terms = set(query.lower().split())
-    if not terms:
-        return 0.0
-    lowered_text = text.lower()
-    matched_terms = sum(1 for term in terms if term in lowered_text)
-    return matched_terms / len(terms)
-
-
-@dataclass
-class _RankedCandidate:
-    dense_rank: int
-    candidate: "DenseResult"
-
-
-def hybrid_rank(query: str, candidates: list["DenseResult"]) -> list["DenseResult"]:
-    if not candidates:
-        return []
-
-    ranked = [
-        _RankedCandidate(dense_rank=index, candidate=candidate)
-        for index, candidate in enumerate(candidates)
-    ]
-
-    keyword_sorted = sorted(
-        ranked,
-        key=lambda item: keyword_score(query, item.candidate.text),
-        reverse=True,
-    )
-
-    keyword_rank_by_id = {
-        id(item.candidate): keyword_rank
-        for keyword_rank, item in enumerate(keyword_sorted)
+def hybrid_rank(
+    dense_results: list["DenseResult"],
+    sparse_results: list["DenseResult"],
+) -> list["DenseResult"]:
+    dense_rank_by_key = {
+        (result.paper_id, result.chunk_index): rank
+        for rank, result in enumerate(dense_results)
+    }
+    sparse_rank_by_key = {
+        (result.paper_id, result.chunk_index): rank
+        for rank, result in enumerate(sparse_results)
     }
 
-    def rrf_score(item: "_RankedCandidate") -> float:
-        keyword_rank = keyword_rank_by_id[id(item.candidate)]
-        return 1 / (60 + item.dense_rank) + 1 / (60 + keyword_rank)
+    candidates_by_key: dict[tuple[str, int], DenseResult] = {}
+    for result in sparse_results:
+        candidates_by_key[(result.paper_id, result.chunk_index)] = result
+    for result in dense_results:
+        candidates_by_key[(result.paper_id, result.chunk_index)] = result
 
-    fused = sorted(ranked, key=rrf_score, reverse=True)
+    def rrf_score(key: tuple[str, int]) -> float:
+        dense_rank = dense_rank_by_key.get(key)
+        sparse_rank = sparse_rank_by_key.get(key)
+        score = 0.0
+        if dense_rank is not None:
+            score += 1 / (60 + dense_rank)
+        if sparse_rank is not None:
+            score += 1 / (60 + sparse_rank)
+        return score
 
-    return [item.candidate for item in fused]
+    sorted_keys = sorted(candidates_by_key.keys(), key=rrf_score, reverse=True)
+
+    return [candidates_by_key[key] for key in sorted_keys]
