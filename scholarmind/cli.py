@@ -4,6 +4,7 @@ import typer
 
 from scholarmind.agents.llm_client import OpenRouterClient
 from scholarmind.agents.qa import AnswerResult, answer_question
+from scholarmind.citations.service import FormattedAndVerifiedAnswer
 from scholarmind.config import get_settings
 from scholarmind.ingestion.pipeline import IngestResult, run_ingestion
 from scholarmind.orchestrator import run as orchestrator_run
@@ -41,6 +42,20 @@ def _print_answer_result(result: "AnswerResult", question: str) -> None:
         )
 
 
+def _print_formatted_answer(formatted: "FormattedAndVerifiedAnswer") -> None:
+    typer.echo("")
+    typer.echo("References:")
+    for reference in formatted.references:
+        typer.echo(f"[{reference.citation_index}] {reference.apa}")
+
+    unsupported = [v for v in formatted.verification_report.verifications if not v.supported]
+    if unsupported:
+        typer.echo("")
+        typer.echo("Warning: the following claims could not be verified against their sources:")
+        for verification in unsupported:
+            typer.echo(f"[{verification.citation_index}] {verification.claim} — {verification.reason}")
+
+
 @app.command()
 def ingest(path: str = typer.Argument(..., help="Path to a document or directory to ingest.")) -> None:
     result = run_ingestion(Path(path))
@@ -71,6 +86,8 @@ def chat(request: str = typer.Argument(..., help="A request: a question, or a pa
         _print_ingest_result(result.ingest_result)
     elif result.answer_result is not None:
         _print_answer_result(result.answer_result, result.answer_result.question)
+        if result.formatted_answer is not None:
+            _print_formatted_answer(result.formatted_answer)
     else:
         typer.echo("No result produced.")
 

@@ -4,6 +4,7 @@ from langgraph.graph import StateGraph, START, END
 
 from scholarmind.agents.llm_client import LLMClient
 from scholarmind.agents.qa import answer_question
+from scholarmind.citations.service import format_and_verify
 from scholarmind.config import Settings
 from scholarmind.ingestion.pipeline import run_ingestion
 from scholarmind.orchestrator.state import GraphState
@@ -60,7 +61,20 @@ def build_graph(llm_client: "LLMClient", settings: "Settings"):
         }
 
     def final(state: GraphState) -> dict:
-        return {"messages": ["done"]}
+        answer_result = state.get("answer_result")
+        if answer_result is None or answer_result.answer is None:
+            return {"messages": ["done"]}
+        try:
+            formatted = format_and_verify(answer_result.answer, llm_client)
+        except Exception as exc:
+            return {"error": str(exc), "messages": ["citation formatting failed"]}
+        return {
+            "formatted_answer": formatted,
+            "messages": [
+                f"formatted {len(formatted.references)} reference(s), "
+                f"{formatted.verification_report.unsupported_count} unsupported"
+            ],
+        }
 
     graph = StateGraph(GraphState)
     graph.add_node("supervisor", supervisor)

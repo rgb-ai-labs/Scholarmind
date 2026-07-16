@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from scholarmind.agents.llm_client import LLMClient, OpenRouterClient
 from scholarmind.agents.qa import AnswerResult
+from scholarmind.citations.service import FormattedAndVerifiedAnswer
 from scholarmind.config import Settings, get_settings
 from scholarmind.ingestion.pipeline import IngestResult
 from scholarmind.orchestrator.graph import build_graph
@@ -11,6 +12,7 @@ from scholarmind.orchestrator.graph import build_graph
 class ChatResult:
     intent: str
     answer_result: AnswerResult | None
+    formatted_answer: FormattedAndVerifiedAnswer | None
     ingest_result: IngestResult | None
     error: str | None
 
@@ -45,6 +47,7 @@ def run(
     return ChatResult(
         intent=final_state.get("intent", ""),
         answer_result=final_state.get("answer_result"),
+        formatted_answer=final_state.get("formatted_answer"),
         ingest_result=final_state.get("ingest_result"),
         error=final_state.get("error"),
     )
