@@ -20,11 +20,9 @@ class ChunkStore:
 
     @property
     def client(self) -> QdrantClient:
-        """The underlying qdrant_client.QdrantClient, exposed for direct inspection."""
         return self._client
 
     def upsert_chunks(self, chunks: list["Chunk"], vectors: list[list[float]]) -> int:
-        """Returns the number of points upserted. len(chunks) == len(vectors)."""
         points = [
             PointStruct(
                 id=self._point_id(chunk),

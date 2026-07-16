@@ -8,7 +8,6 @@ class Embedder:
         self._model = SentenceTransformer(model_name)
 
     def embed_chunks(self, chunks: list["Chunk"], batch_size: int = 32) -> list[list[float]]:
-        """Returns one embedding vector per chunk, same order as chunks."""
         if not chunks:
             return []
 
