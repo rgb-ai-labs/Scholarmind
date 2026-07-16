@@ -30,8 +30,6 @@ def load_pdf(path: Path) -> RawDocument:
 
 
 def load_path(path: Path) -> list[RawDocument]:
-    """path may be a single .pdf file or a directory; directories are scanned
-    non-recursively for *.pdf files, sorted by name."""
     path = Path(path)
 
     if not path.exists():
