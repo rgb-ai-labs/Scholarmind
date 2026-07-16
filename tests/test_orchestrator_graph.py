@@ -50,6 +50,34 @@ def test_graph_final_node_formats_and_verifies_citations(tmp_path: Path):
     assert formatted.verification_report.unsupported_count == 0
 
 
+class VerificationFailingLLMClient:
+    def __init__(self, answer_response: str) -> None:
+        self.answer_response = answer_response
+
+    def complete(self, system_prompt: str, user_prompt: str) -> str:
+        if "fact-checking" in system_prompt:
+            raise RuntimeError("verification service unavailable")
+        return self.answer_response
+
+
+def test_graph_formatting_failure_preserves_answer(tmp_path: Path):
+    settings = Settings(
+        qdrant_path=str(tmp_path / "qdrant"),
+        qdrant_collection="test_graph_formatting_fail_chunks",
+    )
+    run_ingestion(FIXTURE_PATH, settings)
+
+    fake_client = VerificationFailingLLMClient("RAG grounds answers in sources [1].")
+    graph = build_graph(fake_client, settings)
+
+    final_state = graph.invoke({"request": "What does this paper propose?"})
+
+    assert "answer_result" in final_state
+    assert "error" not in final_state
+    assert final_state["formatting_error"] == "verification service unavailable"
+    assert "formatted_answer" not in final_state
+
+
 def test_classify_intent_ingest_with_prefix():
     assert classify_intent("ingest tests/fixtures/sample_paper.pdf") == (
         "ingest",

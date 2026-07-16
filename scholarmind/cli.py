@@ -47,6 +47,7 @@ def _print_formatted_answer(formatted: "FormattedAndVerifiedAnswer") -> None:
     typer.echo("References:")
     for reference in formatted.references:
         typer.echo(f"[{reference.citation_index}] {reference.apa}")
+        typer.echo(reference.bibtex)
 
     unsupported = [v for v in formatted.verification_report.verifications if not v.supported]
     if unsupported:
@@ -88,6 +89,12 @@ def chat(request: str = typer.Argument(..., help="A request: a question, or a pa
         _print_answer_result(result.answer_result, result.answer_result.question)
         if result.formatted_answer is not None:
             _print_formatted_answer(result.formatted_answer)
+        elif result.formatting_error is not None:
+            typer.echo("")
+            typer.echo(
+                f"Note: references could not be formatted/verified ({result.formatting_error}); "
+                "the answer above is unchanged."
+            )
     else:
         typer.echo("No result produced.")
 

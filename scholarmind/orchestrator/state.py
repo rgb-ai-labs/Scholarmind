@@ -14,5 +14,6 @@ class GraphState(TypedDict, total=False):
     ingest_result: IngestResult
     answer_result: AnswerResult
     formatted_answer: FormattedAndVerifiedAnswer
+    formatting_error: str
     messages: Annotated[list[str], operator.add]
     error: str

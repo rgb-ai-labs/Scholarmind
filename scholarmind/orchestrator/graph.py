@@ -67,7 +67,10 @@ def build_graph(llm_client: "LLMClient", settings: "Settings"):
         try:
             formatted = format_and_verify(answer_result.answer, llm_client)
         except Exception as exc:
-            return {"error": str(exc), "messages": ["citation formatting failed"]}
+            return {
+                "formatting_error": str(exc),
+                "messages": ["citation formatting failed"],
+            }
         return {
             "formatted_answer": formatted,
             "messages": [
