@@ -27,7 +27,7 @@ def dense_search(
     collection_name: str,
     limit: int,
 ) -> list[DenseResult]:
-    query_vector = embedder._model.encode([query], convert_to_numpy=True)[0].tolist()
+    query_vector = embedder.embed_text(query)
 
     client = QdrantClient(path=qdrant_path)
     try:

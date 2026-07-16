@@ -22,3 +22,6 @@ class Embedder:
             convert_to_numpy=True,
         )
         return embeddings.tolist()
+
+    def embed_text(self, text: str) -> list[float]:
+        return self._model.encode([text], convert_to_numpy=True)[0].tolist()
