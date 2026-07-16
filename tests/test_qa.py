@@ -52,8 +52,8 @@ def test_answer_question_with_valid_citation(tmp_path: Path):
     assert result.answer.text == "RAG grounds answers in sources [1]."
     assert len(result.answer.citations) == 1
     assert result.answer.citations[0].index == 1
-    assert result.answer.citations[0].title is not None
-    assert result.answer.citations[0].authors
+    assert result.answer.citations[0].title == "A Study of Retrieval-Augmented Generation for Scholarly Question Answering"
+    assert result.answer.citations[0].authors == ["Ada Lovelace", "Grace Hopper"]
     assert result.answer.invalid_citation_markers == []
 
 
