@@ -99,5 +99,15 @@ def chat(request: str = typer.Argument(..., help="A request: a question, or a pa
         typer.echo("No result produced.")
 
 
+@app.command()
+def serve(
+    host: str = typer.Option("127.0.0.1", help="Host to bind the API server to."),
+    port: int = typer.Option(8000, help="Port to bind the API server to."),
+) -> None:
+    import uvicorn
+
+    uvicorn.run("scholarmind.api.app:app", host=host, port=port)
+
+
 if __name__ == "__main__":
     app()
