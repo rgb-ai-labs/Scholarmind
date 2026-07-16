@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     chunk_overlap: int = 150
     retrieval_candidate_k: int = 20
     retrieval_top_k: int = 5
-    retrieval_min_rerank_score: float = 0.0
+    retrieval_min_rerank_score: float = -7.0
     llm_max_tokens: int = 512
 
 
