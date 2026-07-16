@@ -18,6 +18,10 @@ env/
 # Data / artifacts
 data/
 *.pdf
+!tests/fixtures/*.pdf
+
+# Subagent-driven-development scratch
+.superpowers/
 
 # Test / tool caches
 .pytest_cache/
