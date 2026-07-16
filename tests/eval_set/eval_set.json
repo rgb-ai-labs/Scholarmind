@@ -1,0 +1,18 @@
+[
+    {
+        "question": "What is retrieval-augmented generation?",
+        "expected_title": "A Study of Retrieval-Augmented Generation for Scholarly Question Answering"
+    },
+    {
+        "question": "Why does grounding claims in retrieved chunks matter?",
+        "expected_title": "A Study of Retrieval-Augmented Generation for Scholarly Question Answering"
+    },
+    {
+        "question": "How do coastal turbines capture tidal energy?",
+        "expected_title": "Tidal Energy Harvesting Efficiency in Coastal Turbine Arrays"
+    },
+    {
+        "question": "What is the capacity factor of a tidal turbine array?",
+        "expected_title": "Tidal Energy Harvesting Efficiency in Coastal Turbine Arrays"
+    }
+]

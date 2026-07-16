@@ -1,3 +1,4 @@
+import tempfile
 from pathlib import Path
 
 import typer
@@ -5,7 +6,8 @@ import typer
 from scholarmind.agents.llm_client import OpenRouterClient
 from scholarmind.agents.qa import AnswerResult, answer_question
 from scholarmind.citations.service import FormattedAndVerifiedAnswer
-from scholarmind.config import get_settings
+from scholarmind.config import Settings, get_settings
+from scholarmind.eval.runner import Scorecard, load_eval_set, run_eval
 from scholarmind.ingestion.pipeline import IngestResult, run_ingestion
 from scholarmind.orchestrator import run as orchestrator_run
 
@@ -107,6 +109,50 @@ def serve(
     import uvicorn
 
     uvicorn.run("scholarmind.api.app:app", host=host, port=port)
+
+
+def _print_scorecard(scorecard: "Scorecard") -> None:
+    typer.echo(f"Eval scorecard (k={scorecard.k}, cases={scorecard.num_cases})")
+    typer.echo(f"  mean precision@{scorecard.k}: {scorecard.mean_precision_at_k:.3f}")
+    typer.echo(f"  mean recall@{scorecard.k}:    {scorecard.mean_recall_at_k:.3f}")
+    typer.echo(f"  mean faithfulness:   {scorecard.mean_faithfulness:.3f}")
+    typer.echo("")
+    typer.echo("Per-case results:")
+    for case in scorecard.per_case:
+        typer.echo(
+            f"  - {case.question!r} (expected: {case.expected_title}) "
+            f"precision@{scorecard.k}={case.precision_at_k:.3f} "
+            f"recall@{scorecard.k}={case.recall_at_k:.3f} "
+            f"faithfulness={case.faithfulness:.3f}"
+        )
+
+
+@app.command()
+def eval(k: int = typer.Option(5, help="Cut-off k for precision@k / recall@k.")) -> None:
+    repo_root = Path(__file__).resolve().parent.parent
+    eval_set_path = repo_root / "tests" / "eval_set" / "eval_set.json"
+    fixtures_dir = repo_root / "tests" / "fixtures"
+
+    eval_qdrant_path = tempfile.mkdtemp(prefix="scholarmind_eval_")
+    eval_settings = Settings(
+        qdrant_path=eval_qdrant_path,
+        qdrant_collection="scholarmind_eval_chunks",
+    )
+
+    run_ingestion(fixtures_dir / "sample_paper.pdf", eval_settings)
+    run_ingestion(fixtures_dir / "sample_paper_2.pdf", eval_settings)
+
+    settings = get_settings()
+    client = OpenRouterClient(
+        api_key=settings.llm_api_key,
+        base_url=settings.llm_base_url,
+        model=settings.llm_model,
+        max_tokens=settings.llm_max_tokens,
+    )
+
+    cases = load_eval_set(eval_set_path)
+    scorecard = run_eval(cases, client, eval_settings, k=k)
+    _print_scorecard(scorecard)
 
 
 if __name__ == "__main__":
