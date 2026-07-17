@@ -5,9 +5,6 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 
 from scholarmind.agents.llm_client import LLMClient
-from scholarmind.config import Settings, get_settings
-from scholarmind.orchestrator import run as orchestrator_run
-from scholarmind.orchestrator.run import ChatResult
 from scholarmind.api.models import (
     AskRequest,
     AskResponse,
@@ -18,6 +15,9 @@ from scholarmind.api.models import (
     ReferenceModel,
     VerificationReportModel,
 )
+from scholarmind.config import Settings, get_settings
+from scholarmind.orchestrator import run as orchestrator_run
+from scholarmind.orchestrator.run import ChatResult
 
 
 def get_settings_dependency() -> Settings:

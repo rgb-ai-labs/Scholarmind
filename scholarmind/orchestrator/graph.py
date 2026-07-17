@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import END, START, StateGraph
 
 from scholarmind.agents.discovery import discover
 from scholarmind.agents.gap_analysis import analyze_gaps

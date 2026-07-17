@@ -29,7 +29,7 @@ class ChunkStore:
                 vector=vector,
                 payload=asdict(chunk),
             )
-            for chunk, vector in zip(chunks, vectors)
+            for chunk, vector in zip(chunks, vectors, strict=True)
         ]
 
         self._client.upsert(collection_name=self._collection_name, points=points)

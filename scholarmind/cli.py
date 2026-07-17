@@ -57,7 +57,9 @@ def _print_formatted_answer(formatted: "FormattedAndVerifiedAnswer") -> None:
         typer.echo("")
         typer.echo("Warning: the following claims could not be verified against their sources:")
         for verification in unsupported:
-            typer.echo(f"[{verification.citation_index}] {verification.claim} — {verification.reason}")
+            typer.echo(
+                f"[{verification.citation_index}] {verification.claim} — {verification.reason}"
+            )
 
 
 def _print_agent_result(result: "AgentResult", request: str) -> None:
@@ -69,13 +71,15 @@ def _print_agent_result(result: "AgentResult", request: str) -> None:
     typer.echo(f"(grounded in {result.sources_found} retrieved source(s))")
 
 
-@app.command()
-def ingest(path: str = typer.Argument(..., help="Path to a document or directory to ingest.")) -> None:
+@app.command(help="Ingest a PDF or a directory of PDFs into the knowledge base.")
+def ingest(
+    path: str = typer.Argument(..., help="Path to a document or directory to ingest."),
+) -> None:
     result = run_ingestion(Path(path))
     _print_ingest_result(result)
 
 
-@app.command()
+@app.command(help="Answer a question grounded only in ingested sources, with citations.")
 def ask(question: str = typer.Argument(..., help="Research question to ask.")) -> None:
     settings = get_settings()
     client = OpenRouterClient(
@@ -89,8 +93,12 @@ def ask(question: str = typer.Argument(..., help="Research question to ask.")) -
     _print_answer_result(result, question)
 
 
-@app.command()
-def chat(request: str = typer.Argument(..., help="A request: a question, or a path/'ingest <path>' to ingest.")) -> None:
+@app.command(help="Route a request: ingest a path, ask a question, or run a domain agent.")
+def chat(
+    request: str = typer.Argument(
+        ..., help="A question, 'ingest <path>', or '<summarize|gaps|methods|write> <topic>'."
+    ),
+) -> None:
     result = orchestrator_run.run(request)
 
     if result.error is not None:
@@ -113,7 +121,7 @@ def chat(request: str = typer.Argument(..., help="A request: a question, or a pa
         typer.echo("No result produced.")
 
 
-@app.command()
+@app.command(help="Start the FastAPI server (uvicorn) exposing /ingest, /ask, /health.")
 def serve(
     host: str = typer.Option("127.0.0.1", help="Host to bind the API server to."),
     port: int = typer.Option(8000, help="Port to bind the API server to."),
@@ -139,7 +147,7 @@ def _print_scorecard(scorecard: "Scorecard") -> None:
         )
 
 
-@app.command()
+@app.command(help="Run the labelled eval set and print a precision/recall/faithfulness scorecard.")
 def eval(k: int = typer.Option(5, help="Cut-off k for precision@k / recall@k.")) -> None:
     repo_root = Path(__file__).resolve().parent.parent
     eval_set_path = repo_root / "tests" / "eval_set" / "eval_set.json"

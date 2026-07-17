@@ -1,5 +1,5 @@
-from typing import Annotated, TypedDict
 import operator
+from typing import Annotated, TypedDict
 
 from scholarmind.agents.base import AgentResult
 from scholarmind.agents.qa import AnswerResult

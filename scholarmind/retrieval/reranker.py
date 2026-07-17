@@ -17,7 +17,7 @@ class Reranker:
         scores = self._model.predict(pairs)
 
         ranked = sorted(
-            zip(candidates, scores), key=lambda item: item[1], reverse=True
+            zip(candidates, scores, strict=True), key=lambda item: item[1], reverse=True
         )
 
         return [(candidate, float(score)) for candidate, score in ranked[:top_k]]

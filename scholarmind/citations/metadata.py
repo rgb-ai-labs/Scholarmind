@@ -52,7 +52,9 @@ def _extract_authors(item: dict, fallback: list[str]) -> list[str]:
     return names if names else fallback
 
 
-def normalize_metadata(title: str | None, authors: list[str], year: int | None) -> NormalizedMetadata:
+def normalize_metadata(
+    title: str | None, authors: list[str], year: int | None
+) -> NormalizedMetadata:
     key = (title, tuple(authors), year)
     if key in _CACHE:
         return _CACHE[key]

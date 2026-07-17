@@ -82,7 +82,7 @@ def parse_document(raw: "RawDocument") -> ParsedDocument:
     for page_num, page_text in enumerate(raw.pages, start=1):
         for line in page_text.splitlines():
             if HEADING_RE.match(line.strip()):
-                if current.heading is not None or any(l.strip() for l in current.lines):
+                if current.heading is not None or any(entry.strip() for entry in current.lines):
                     current.page_end = page_num
                     sections.append(current)
                 current = _SectionBuilder(heading=line.strip(), page_start=page_num)
@@ -90,7 +90,7 @@ def parse_document(raw: "RawDocument") -> ParsedDocument:
                 current.lines.append(line)
 
     current.page_end = num_pages if num_pages else current.page_start
-    if current.heading is not None or any(l.strip() for l in current.lines):
+    if current.heading is not None or any(entry.strip() for entry in current.lines):
         sections.append(current)
 
     parsed_sections = [

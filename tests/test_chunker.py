@@ -78,7 +78,7 @@ def test_paragraphs_exceeding_chunk_size_produce_overlapping_chunks():
     # chunk_index increases monotonically starting from 0
     assert [c.chunk_index for c in chunks] == list(range(len(chunks)))
 
-    for prev_chunk, next_chunk in zip(chunks, chunks[1:]):
+    for prev_chunk, next_chunk in zip(chunks, chunks[1:], strict=False):
         assert prev_chunk.section == "2. Methodology"
         assert next_chunk.section == "2. Methodology"
         tail = prev_chunk.text[-chunk_overlap:]
