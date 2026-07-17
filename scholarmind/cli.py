@@ -131,6 +131,20 @@ def serve(
     uvicorn.run("scholarmind.api.app:app", host=host, port=port)
 
 
+@app.command(
+    name="app",
+    help="Launch the Streamlit web UI (upload PDFs, ask questions) at http://localhost:8501.",
+)
+def launch_webapp() -> None:
+    import subprocess
+    import sys
+
+    # Embedded Qdrant is single-process: don't run this alongside `scholarmind serve`
+    # against the same QDRANT_PATH at the same time.
+    webapp_path = Path(__file__).resolve().parent / "webapp" / "app.py"
+    subprocess.run([sys.executable, "-m", "streamlit", "run", str(webapp_path)])
+
+
 def _print_scorecard(scorecard: "Scorecard") -> None:
     typer.echo(f"Eval scorecard (k={scorecard.k}, cases={scorecard.num_cases})")
     typer.echo(f"  mean precision@{scorecard.k}: {scorecard.mean_precision_at_k:.3f}")

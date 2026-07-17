@@ -1,10 +1,13 @@
-.PHONY: setup run test test-all lint fmt ingest ask
+.PHONY: setup run webapp test test-all lint fmt ingest ask
 
 setup:
-	uv sync --extra dev
+	uv sync --extra dev --extra webapp
 
 run:
 	uv run scholarmind serve
+
+webapp:
+	uv run scholarmind app
 
 # Fast, offline, deterministic suite (no model downloads, no API key) — the default dev loop.
 test:

@@ -22,7 +22,7 @@ jobs:
           enable-cache: true
 
       - name: Sync dependencies
-        run: uv sync --extra dev
+        run: uv sync --extra dev --extra webapp
 
       - name: Ruff
         run: uv run ruff check .
