@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from scholarmind.agents.base import AgentResult
 from scholarmind.agents.llm_client import LLMClient, OpenRouterClient
 from scholarmind.agents.qa import AnswerResult
 from scholarmind.citations.service import FormattedAndVerifiedAnswer
@@ -14,6 +15,7 @@ class ChatResult:
     answer_result: AnswerResult | None
     formatted_answer: FormattedAndVerifiedAnswer | None
     formatting_error: str | None
+    agent_result: AgentResult | None
     ingest_result: IngestResult | None
     error: str | None
 
@@ -50,6 +52,7 @@ def run(
         answer_result=final_state.get("answer_result"),
         formatted_answer=final_state.get("formatted_answer"),
         formatting_error=final_state.get("formatting_error"),
+        agent_result=final_state.get("agent_result"),
         ingest_result=final_state.get("ingest_result"),
         error=final_state.get("error"),
     )

@@ -3,6 +3,7 @@ from pathlib import Path
 
 import typer
 
+from scholarmind.agents.base import AgentResult
 from scholarmind.agents.llm_client import OpenRouterClient
 from scholarmind.agents.qa import AnswerResult, answer_question
 from scholarmind.citations.service import FormattedAndVerifiedAnswer
@@ -59,6 +60,15 @@ def _print_formatted_answer(formatted: "FormattedAndVerifiedAnswer") -> None:
             typer.echo(f"[{verification.citation_index}] {verification.claim} — {verification.reason}")
 
 
+def _print_agent_result(result: "AgentResult", request: str) -> None:
+    if result.sources_found == 0:
+        typer.echo(f"No relevant sources found for: {request}")
+        return
+    typer.echo(result.text)
+    typer.echo("")
+    typer.echo(f"(grounded in {result.sources_found} retrieved source(s))")
+
+
 @app.command()
 def ingest(path: str = typer.Argument(..., help="Path to a document or directory to ingest.")) -> None:
     result = run_ingestion(Path(path))
@@ -97,6 +107,8 @@ def chat(request: str = typer.Argument(..., help="A request: a question, or a pa
                 f"Note: references could not be formatted/verified ({result.formatting_error}); "
                 "the answer above is unchanged."
             )
+    elif result.agent_result is not None:
+        _print_agent_result(result.agent_result, request)
     else:
         typer.echo("No result produced.")
 

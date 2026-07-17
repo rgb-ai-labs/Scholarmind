@@ -1,10 +1,59 @@
 from pathlib import Path
 
+import pytest
+
 from scholarmind.config import Settings
 from scholarmind.ingestion.pipeline import run_ingestion
 from scholarmind.orchestrator.graph import build_graph, classify_intent
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "sample_paper.pdf"
+
+
+def test_classify_intent_routes_agent_prefixes():
+    assert classify_intent("summarize RAG") == ("summarize", "RAG")
+    assert classify_intent("gaps in RAG") == ("gaps", "in RAG")
+    assert classify_intent("methods for tidal energy") == ("methods", "for tidal energy")
+    assert classify_intent("write a review of X") == ("write", "a review of X")
+    assert classify_intent("draft a review of X") == ("write", "a review of X")
+    assert classify_intent("discover papers on tides") == ("discover", "papers on tides")
+    assert classify_intent("what is RAG?") == ("ask", "what is RAG?")
+
+
+@pytest.mark.parametrize(
+    "request_text,intent",
+    [
+        ("summarize retrieval augmented generation", "summarize"),
+        ("gaps retrieval augmented generation", "gaps"),
+        ("methods retrieval augmented generation", "methods"),
+        ("write retrieval augmented generation", "write"),
+        ("discover retrieval augmented generation", "discover"),
+    ],
+)
+def test_graph_routes_to_agent_node(tmp_path, request_text, intent):
+    settings = Settings(
+        qdrant_path=str(tmp_path / "qdrant"),
+        qdrant_collection="test_graph_agent_chunks",
+    )
+    run_ingestion(FIXTURE_PATH, settings)
+
+    fake_client = _AgentFakeLLMClient("A grounded agent response.")
+    graph = build_graph(fake_client, settings)
+
+    final_state = graph.invoke({"request": request_text})
+
+    assert final_state["intent"] == intent
+    assert "agent_result" in final_state
+    assert "answer_result" not in final_state
+    assert "error" not in final_state
+    assert final_state["agent_result"].sources_found > 0
+
+
+class _AgentFakeLLMClient:
+    def __init__(self, response: str) -> None:
+        self.response = response
+
+    def complete(self, system_prompt: str, user_prompt: str) -> str:
+        return self.response
 
 
 class FakeLLMClient:

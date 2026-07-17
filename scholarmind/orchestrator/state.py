@@ -1,6 +1,7 @@
 from typing import Annotated, TypedDict
 import operator
 
+from scholarmind.agents.base import AgentResult
 from scholarmind.agents.qa import AnswerResult
 from scholarmind.citations.service import FormattedAndVerifiedAnswer
 from scholarmind.ingestion.pipeline import IngestResult
@@ -15,5 +16,6 @@ class GraphState(TypedDict, total=False):
     answer_result: AnswerResult
     formatted_answer: FormattedAndVerifiedAnswer
     formatting_error: str
+    agent_result: AgentResult
     messages: Annotated[list[str], operator.add]
     error: str
