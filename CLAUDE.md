@@ -12,8 +12,9 @@ Context for future sessions working on this codebase.
 3. **Agent layer** (`scholarmind/agents/`) — eight specialized agents, each a LangGraph node
    or subgraph with a narrow responsibility (below).
 4. **Knowledge & retrieval layer** (`scholarmind/ingestion/`, `scholarmind/retrieval/`,
-   `scholarmind/citations/`) — LlamaIndex-based document processing and hybrid search over a
-   local, embedded Qdrant store (`QdrantClient(path=...)`, no server, no Docker).
+   `scholarmind/citations/`) — a hand-rolled document-processing and hybrid-search stack over a
+   local, embedded Qdrant store (`QdrantClient(path=...)`, no server, no Docker). No LlamaIndex —
+   parsing, chunking, embedding, dense+BM25 retrieval, RRF fusion, and reranking are explicit.
 
 Each layer only calls downward (interaction → orchestration → agent → knowledge/retrieval).
 Agents never talk to Qdrant directly — they go through the retrieval layer.
@@ -36,7 +37,7 @@ gap-analysis, citation, methodology, writing.)
 ## RAG Pipeline
 
 **Ingestion (write path):** parse → chunk → tag → embed → store
-- *Parse*: extract text from source documents (PDF, HTML, etc.) via LlamaIndex readers.
+- *Parse*: extract text and section structure from source documents (PDF via pypdf).
 - *Chunk*: split parsed text into retrieval-sized units, preserving section/page metadata.
 - *Tag*: attach metadata (source, authors, section, page) used for filtering and citation.
 - *Embed*: encode chunks with a local `sentence-transformers` model.
