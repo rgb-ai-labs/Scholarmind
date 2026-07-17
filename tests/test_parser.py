@@ -2,7 +2,7 @@ import hashlib
 from pathlib import Path
 
 from scholarmind.ingestion.loader import RawDocument, load_pdf
-from scholarmind.ingestion.parser import ParsedDocument, ParsedSection, parse_document
+from scholarmind.ingestion.parser import ParsedDocument, parse_document
 
 FIXTURE = Path(__file__).parent / "fixtures" / "sample_paper.pdf"
 

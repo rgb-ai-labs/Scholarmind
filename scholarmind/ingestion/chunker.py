@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from scholarmind.ingestion.parser import ParsedDocument, ParsedSection
+    from scholarmind.ingestion.parser import ParsedDocument
 
 
 @dataclass

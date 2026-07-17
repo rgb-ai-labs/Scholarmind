@@ -35,7 +35,7 @@ class Scorecard:
 
 
 def load_eval_set(path: "str | Path") -> list[EvalCase]:
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         raw_cases = json.load(f)
     return [
         EvalCase(question=case["question"], expected_title=case["expected_title"])
