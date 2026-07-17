@@ -23,12 +23,13 @@ def test_openrouter_client_real_call_returns_pong():
 
 
 def test_openrouter_client_normalizes_none_content_to_empty_string():
-    settings = get_settings()
+    # A dummy key is enough: the real OpenAI client built here is immediately replaced
+    # by the fake below, so this test needs no configured key and makes no network call.
     client = OpenRouterClient(
-        api_key=settings.llm_api_key,
-        base_url=settings.llm_base_url,
-        model=settings.llm_model,
-        max_tokens=settings.llm_max_tokens,
+        api_key="test-key",
+        base_url="https://example.invalid/v1",
+        model="test-model",
+        max_tokens=16,
     )
 
     class _FakeMessage:
