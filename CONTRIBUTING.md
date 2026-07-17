@@ -5,8 +5,8 @@ Thanks for your interest in contributing.
 ## Setup
 
 ```bash
-uv sync --extra dev     # install runtime + dev dependencies (ruff, pytest)
-cp .env.example .env     # then add your OpenRouter/LLM key for live features
+uv sync --extra dev --extra webapp    # runtime + dev deps (ruff, pytest) + the Streamlit UI
+cp .env.example .env                   # then add your OpenRouter/LLM key for live features
 ```
 
 ## Workflow

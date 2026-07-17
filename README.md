@@ -20,7 +20,8 @@ flagged back to you rather than presented as fact.
 
 Four layers (see [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full design):
 
-1. **Interaction** — CLI (Typer) and HTTP API (FastAPI).
+1. **Interaction** — CLI (Typer), HTTP API (FastAPI), and a Streamlit web app — all thin layers
+   over the same engine functions.
 2. **Orchestration** — a [LangGraph](https://github.com/langchain-ai/langgraph) supervisor that
    classifies a request and routes it to the right agent.
 3. **Agent** — a Q&A/citation agent plus five domain agents (discovery, summarization,
@@ -44,17 +45,19 @@ Four layers (see [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full design):
   support the claim.
 - **Orchestrator** — `chat` routes `ingest`, `ask`, and the five domain agents through one graph.
 - **HTTP API** — `POST /ingest`, `POST /ask`, `GET /health`, served by `scholarmind serve`.
+- **Web app** — a Streamlit UI (`scholarmind app`) for uploading PDFs and asking questions in a
+  chat interface, built entirely on the same engine functions as the CLI/API.
 - **Eval harness** — precision@k / recall@k / citation-faithfulness scoring over a labelled set
   (`scholarmind eval`), with centralized guardrails (confidence threshold, cite-only-ingested).
 
-**149 tests** — 91 run fully offline with no API key (fast CI gate); the remaining 58 download
+**152 tests** — 94 run fully offline with no API key (fast CI gate); the remaining 58 download
 models or exercise live LLM/network paths.
 
 ## Quickstart
 
 ```bash
 # 1. Install dependencies (uv; falls back to pip)
-uv sync --extra dev
+uv sync --extra dev --extra webapp
 
 # 2. Configure — copy the template and add an OpenRouter (or any OpenAI-compatible) key
 cp .env.example .env
@@ -73,8 +76,18 @@ uv run scholarmind chat "summarize retrieval-augmented generation"
 uv run scholarmind serve
 ```
 
-Run `uv run scholarmind --help` to see all commands (`ingest`, `ask`, `chat`, `serve`, `eval`).
+Run `uv run scholarmind --help` to see all commands (`ingest`, `ask`, `chat`, `serve`, `app`, `eval`).
 See the [User Guide](docs/USER_GUIDE.md) for the full command/config reference and a walkthrough.
+
+### Web app
+
+Prefer a browser to the CLI? `uv run scholarmind app` launches a Streamlit UI at
+`http://localhost:8501` — upload PDFs, watch them get ingested, and ask questions in a chat
+interface with sources, formatted references, and flagged/unsupported claims shown inline. It's
+a thin UI layer over the same engine functions the CLI and API use — no separate logic.
+
+> Embedded Qdrant is single-process: don't run the web app and `scholarmind serve` against the
+> same `QDRANT_PATH` at the same time.
 
 ## Configuration
 
@@ -101,7 +114,7 @@ answer/verification/agent steps require one.
 
 ## Roadmap / build phases
 
-Phases 1–8 are implemented and tested; phase 9 (this pass) is packaging for release.
+All phases below are implemented and tested.
 
 1. ✅ Project scaffold (config, CLI, packaging)
 2. ✅ Ingestion pipeline (PDF → chunks → embedded Qdrant, idempotent)
@@ -111,7 +124,8 @@ Phases 1–8 are implemented and tested; phase 9 (this pass) is packaging for re
 6. ✅ Citation & verification agent (Crossref, APA/BibTeX, claim verifier)
 7. ✅ FastAPI + CLI
 8. ✅ Eval harness & guardrails
-9. 🔜 Docs & release polish
+9. ✅ Docs & release polish
+10. ✅ Streamlit web app (`scholarmind app`)
 
 Future ideas: additional source connectors (HTML, arXiv/DOI), more citation styles, an OpenAlex
 fallback for metadata, and a real Zotero export.

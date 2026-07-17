@@ -23,15 +23,17 @@ and an OpenAI-compatible LLM API — with no Docker and no cloud vector database
 git clone <your-fork-url> scholarmind
 cd scholarmind
 
-uv sync --extra dev          # install runtime + dev dependencies
+uv sync --extra dev --extra webapp    # runtime + dev deps + the Streamlit web app
 
-cp .env.example .env         # then edit .env and set LLM_API_KEY (see below)
+cp .env.example .env                   # then edit .env and set LLM_API_KEY (see below)
 ```
+
+(Omit `--extra webapp` if you only want the CLI/API and not the browser UI.)
 
 Verify the install with the fast, offline test suite (no key, no model download needed):
 
 ```bash
-uv run pytest -m "not slow and not llm" -q     # ~90 tests, ~11s
+uv run pytest -m "not slow and not llm" -q     # ~94 tests, ~20s
 uv run scholarmind --help                       # lists all commands
 ```
 
@@ -160,6 +162,20 @@ scholarmind serve [--host 127.0.0.1] [--port 8000]
 - Starts a FastAPI (uvicorn) server exposing `GET /health`, `POST /ingest`, `POST /ask`,
   backed by the same entry points as the CLI. Interactive docs at `/docs`.
 
+### `app` — web UI
+
+```
+scholarmind app
+```
+- Launches a Streamlit web app at `http://localhost:8501` (runs `streamlit run
+  scholarmind/webapp/app.py` under the hood). Upload PDFs and ask questions from a browser — it
+  calls the same `run_ingestion`, `answer_question`, and `format_and_verify` functions the CLI
+  uses, so it always sees the same library as `ingest`/`ask`/`chat`.
+- No flags. Stop it with Ctrl-C in the terminal it's running in.
+- **Embedded Qdrant is single-process** — don't run `app` and `serve` (or two `app`/`serve`
+  instances) against the same `QDRANT_PATH` at the same time; the second one will fail to open
+  the store.
+
 ### `eval` — quality scorecard
 
 ```
@@ -188,7 +204,7 @@ Per-case results:
 
 ```bash
 # 0. one-time: install + configure
-uv sync --extra dev
+uv sync --extra dev --extra webapp
 cp .env.example .env          # set LLM_API_KEY=sk-or-...
 
 # 1. Ingest a paper
@@ -231,6 +247,36 @@ curl -H "Content-Type: application/json" \
 # 5. Score retrieval + citation quality
 uv run scholarmind eval
 ```
+
+---
+
+## Web app
+
+Prefer a browser? Same engine, no separate setup:
+
+```bash
+uv sync --extra dev --extra webapp   # once, to install Streamlit
+uv run scholarmind app                # -> opens http://localhost:8501
+```
+
+1. **Sidebar** — shows your current config (LLM model, embedding model, Qdrant path) and how
+   many papers/chunks are indexed. If `LLM_API_KEY` isn't set, paste one here for the session
+   (it's used only in memory, never written to `.env`).
+2. **Upload & ingest** — drag PDFs into the uploader, click **Ingest uploaded papers**. Each
+   file gets a success/error line (papers + chunks ingested), never a raw traceback. The
+   library counter in the sidebar updates automatically.
+3. **Ask** — type a question in the chat box at the bottom. The answer renders with its inline
+   `[N]` markers, an expandable **Sources** panel (title/authors/year/page per marker), and an
+   expandable **Verification** panel showing which claims were confirmed against their source
+   and which were flagged as unsupported (with the reason). If retrieval finds nothing, you get
+   a friendly "No relevant sources found" box, not an error.
+
+The web app is a thin UI over `run_ingestion`, `answer_question`, and `format_and_verify` — the
+exact same functions the CLI calls, reading and writing the exact same `QDRANT_PATH`, so
+whatever you ingest via `scholarmind ingest` shows up here and vice versa.
+
+> Embedded Qdrant is single-process — don't run the web app and `scholarmind serve` against the
+> same `QDRANT_PATH` at the same time.
 
 ---
 
