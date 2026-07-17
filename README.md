@@ -18,7 +18,7 @@ flagged back to you rather than presented as fact.
 
 ## Architecture
 
-Four layers (see [`CLAUDE.md`](CLAUDE.md) for the full design):
+Four layers (see [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full design):
 
 1. **Interaction** — CLI (Typer) and HTTP API (FastAPI).
 2. **Orchestration** — a [LangGraph](https://github.com/langchain-ai/langgraph) supervisor that

@@ -37,7 +37,7 @@ offline. Live-LLM tests must also be `skipif`-guarded on `LLM_API_KEY` so a keyl
 - Configuration lives only in `scholarmind/config.py` (pydantic-settings, `.env`-driven).
 - No Docker, no external services required to run or test locally — Qdrant runs embedded.
 - Never commit secrets, API keys, or ingested data (`.env` and `data/` are gitignored).
-- See `CLAUDE.md` for the architecture and build phases.
+- See `ARCHITECTURE.md` for the architecture and build phases.
 
 ## Good first issues
 

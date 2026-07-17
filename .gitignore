@@ -20,9 +20,6 @@ data/
 *.pdf
 !tests/fixtures/*.pdf
 
-# Subagent-driven-development scratch
-.superpowers/
-
 # Test / tool caches
 .pytest_cache/
 .mypy_cache/
