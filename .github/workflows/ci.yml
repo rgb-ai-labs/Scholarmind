@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast:
+    name: Lint + fast tests (offline, no API key)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync --extra dev
+
+      - name: Ruff
+        run: uv run ruff check .
+
+      # The "not slow and not llm" selection excludes every test that downloads a
+      # HuggingFace model or makes a live LLM/network call, so this job is fast,
+      # deterministic, and green on a fresh clone with no API key. This is the
+      # fresh-clone-to-green gate.
+      - name: Fast tests
+        run: uv run pytest -m "not slow and not llm" -q
