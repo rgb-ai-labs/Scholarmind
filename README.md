@@ -74,6 +74,7 @@ uv run scholarmind serve
 ```
 
 Run `uv run scholarmind --help` to see all commands (`ingest`, `ask`, `chat`, `serve`, `eval`).
+See the [User Guide](docs/USER_GUIDE.md) for the full command/config reference and a walkthrough.
 
 ## Configuration
 
