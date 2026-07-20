@@ -37,8 +37,13 @@ gap-analysis, citation, methodology, writing.)
 ## RAG Pipeline
 
 **Ingestion (write path):** parse → chunk → tag → embed → store
-- *Parse*: extract text and section structure from source documents (PDF via pypdf).
-- *Chunk*: split parsed text into retrieval-sized units, preserving section/page metadata.
+- *Parse*: extract text and section structure from source documents (PDF via pypdf), plus
+  tables/figures (PyMuPDF layout-aware detection) and equations (a regex heuristic) via
+  `scholarmind/ingestion/multimodal.py` — each individually failure-isolated so a paper with
+  none of these, or an unparseable one, still ingests text-only.
+- *Chunk*: split parsed text into retrieval-sized units, preserving section/page metadata; each
+  extracted table/equation/figure becomes its own chunk too, tagged `chunk_type`
+  (`"table"`/`"equation"`/`"figure"`, default `"text"`), with figures carrying an `image_path`.
 - *Tag*: attach metadata (source, authors, section, page) used for filtering and citation.
 - *Embed*: encode chunks with a local `sentence-transformers` model.
 - *Store*: upsert vectors + metadata into the embedded Qdrant collection.

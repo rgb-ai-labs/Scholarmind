@@ -44,15 +44,24 @@ offline. Live-LLM tests must also be `skipif`-guarded on `LLM_API_KEY` so a keyl
 These are self-contained and don't require touching the orchestration core:
 
 - **New source connectors** — the ingestion loader only handles PDFs today. Add a loader for
-  another format (plain text, HTML, arXiv/DOI fetch) that produces the same `RawDocument`
-  shape (`scholarmind/ingestion/loader.py`).
+  another format (plain text, HTML) that produces the same `RawDocument` shape
+  (`scholarmind/ingestion/loader.py`). (arXiv/Semantic Scholar/OpenAlex discovery — search plus
+  ingest — already exists in `scholarmind/discovery/`.)
+- **A second citation-graph hop, or an OpenAlex citation-graph provider** — `scholarmind/discovery/service.get_citation_graph`
+  is deliberately 1-hop and Semantic Scholar-only; expanding either is a self-contained addition
+  to `scholarmind/discovery/`.
 - **New citation styles** — `scholarmind/citations/formatter.py` uses a pluggable style
-  registry (APA + BibTeX today). Add MLA, Chicago, or IEEE by registering a new formatter —
-  it's a one-line registration plus the formatter class and its tests.
-- **Wire up the Zotero sync hook** — there's a `# TODO: Zotero sync hook` marker in
-  `formatter.py` for exporting formatted references via the Zotero Web API.
+  registry (APA/MLA/Chicago/IEEE/Vancouver/BibTeX today). Add another (e.g. Harvard) by
+  registering a new formatter — it's a one-line registration plus the formatter class and
+  its tests.
+- **Zotero read/import** — `scholarmind/citations/zotero.py` only pushes (write); adding a
+  `GET /items` read path to import an existing Zotero library is a self-contained addition.
 - **A sixth intent for the orchestrator** — the `chat` router uses a registry + dispatcher
   (`scholarmind/orchestrator/graph.py`); adding an intent is a documented, small change.
+- **Stricter Crossref match confidence** — `citations/metadata.py`'s `_MIN_MATCH_SCORE` (15.0)
+  can accept a false-positive match for a short/generic title; tightening the threshold or
+  reusing the title-similarity check already added for the OpenAlex/Semantic Scholar fallback
+  path is self-contained, with `tests/test_citation_metadata.py` as the pattern to follow.
 
 ## Code of conduct
 

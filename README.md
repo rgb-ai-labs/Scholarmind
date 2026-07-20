@@ -3,8 +3,15 @@
 **A multi-agent, RAG-powered research assistant for PhD students.** ScholarMind ingests your
 papers into a local vector index and answers research questions with **verified, citation-backed**
 answers — every claim is grounded in a retrieved passage, and a second model pass checks that the
-cited passage actually supports the claim. It runs entirely on your machine: embedded Qdrant, no
-cloud vector database, and **no Docker**.
+cited passage actually supports the claim.
+
+> **Runs 100% locally — no Pinecone, no cloud vector database, no Docker, no vector-store account
+> or API key.** The RAG stack is fully on-device: embeddings run locally (`sentence-transformers`)
+> and the vector store is **Qdrant in embedded mode** — think *SQLite for vectors*: it lives
+> in-process and writes to a plain local folder (`./data/qdrant`) that's created automatically on
+> first ingest. Your papers and their embeddings never leave your machine. The only network call
+> is the final LLM step (any OpenAI-compatible API), plus optional public metadata lookups. Nothing
+> to provision, no infrastructure to stand up — just `uv sync` and go.
 
 <!-- ![ScholarMind architecture](docs/architecture.png) -->
 <!-- TODO: add an architecture diagram image at docs/architecture.png and uncomment the line above. -->
@@ -24,8 +31,11 @@ Four layers (see [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full design):
    over the same engine functions.
 2. **Orchestration** — a [LangGraph](https://github.com/langchain-ai/langgraph) supervisor that
    classifies a request and routes it to the right agent.
-3. **Agent** — a Q&A/citation agent plus five domain agents (discovery, summarization,
-   gap-analysis, methodology, writing), all grounded in retrieval.
+3. **Agent** — a Q&A/citation agent plus domain agents (discovery, summarization, gap-analysis,
+   methodology, writing, novelty), all grounded in retrieval. The orchestrator's `chat` router
+   only wires up the original five (`discover`/`summarize`/`gaps`/`methods`/`write`); novelty is
+   reached through the web app only, since a single free-text `chat` intent doesn't fit its
+   "check this passage" shape.
 4. **Knowledge & retrieval** — a **hand-rolled hybrid-RAG layer over embedded Qdrant**: PDF
    parsing (pypdf), section/paragraph-aware chunking, local `sentence-transformers` embeddings,
    dense + BM25 sparse retrieval fused with Reciprocal Rank Fusion, and a cross-encoder reranker.
@@ -33,24 +43,45 @@ Four layers (see [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full design):
 
 ## Features
 
-- **Ingestion** — PDF → clean text + section structure + bibliographic metadata → chunked,
-  metadata-tagged, embedded, and stored idempotently (keyed by a content hash, so re-ingesting a
-  paper updates rather than duplicates).
+- **Ingestion & library management** — PDF → clean text + section structure + bibliographic
+  metadata → chunked, metadata-tagged, embedded, and stored idempotently (keyed by a content hash,
+  so re-ingesting a paper updates rather than duplicates). A byte-different copy of a paper you
+  already have (e.g. re-downloaded or regenerated) is flagged with a warning rather than silently
+  duplicated; `scholarmind dedupe` finds and removes any duplicates, and `scholarmind delete`
+  removes a single paper by ID or title (also a per-paper delete button in the web app).
 - **Hybrid retrieval** — dense vector search + real BM25 sparse search, RRF-fused, then
   cross-encoder reranked; results carry full citation metadata.
 - **Grounded Q&A** — answers with inline `[N]` citation markers, a resolved sources list, and a
   low-confidence refusal ("no relevant sources found") when retrieval comes up empty or weak.
-- **Citation & verification** — Crossref metadata normalization, APA + BibTeX formatting
-  (pluggable styles), and a per-claim verifier that flags any citation whose passage doesn't
-  support the claim.
+- **Citation & verification** — metadata normalization via Crossref, falling back to OpenAlex
+  then Semantic Scholar when Crossref has nothing (with a title-similarity check before trusting
+  a fallback match), APA/MLA/Chicago/IEEE/Vancouver/BibTeX formatting (pluggable style registry),
+  and a per-claim verifier that flags any citation whose passage doesn't support the claim.
+- **Reference management & export** — bulk BibTeX export (whole library or selected papers,
+  collision-safe keys), a Zotero push (`scholarmind/citations/zotero.py`), and a LaTeX/Overleaf
+  export for Writing-agent drafts ([N] markers → `\cite{}`, plus a matching .bib).
+- **Structured writing & novelty check** — the writing agent now takes a section-type
+  (Related Work/Introduction/Discussion/Abstract), a multi-paper scope, and voice notes,
+  and guarantees no uncited sentence reaches the output; a separate novelty/overlap agent
+  (`scholarmind/agents/novelty.py`) gives an advisory (not plagiarism-verdict) read on how a
+  draft overlaps with retrieved content, from the library and optionally external literature.
 - **Orchestrator** — `chat` routes `ingest`, `ask`, and the five domain agents through one graph.
 - **HTTP API** — `POST /ingest`, `POST /ask`, `GET /health`, served by `scholarmind serve`.
 - **Web app** — a Streamlit UI (`scholarmind app`) for uploading PDFs and asking questions in a
   chat interface, built entirely on the same engine functions as the CLI/API.
+- **Literature discovery & citation graph** — searches arXiv, Semantic Scholar, and OpenAlex by
+  topic (`scholarmind/discovery/`), deduping against your library and across sources, with an
+  ingest action (PDF when open-access, else a title+abstract record); a 1-hop citation graph
+  (references/citing papers) via Semantic Scholar for any library paper, DOI, or S2 paper ID.
+- **Multimodal ingestion** — tables, equations, and figures are extracted alongside body text
+  (PyMuPDF layout-aware table/image detection, a regex equation heuristic), each stored as its
+  own retrievable, citable chunk; figures keep an on-disk image path. A gated, configurable
+  **Figure Q&A** (`scholarmind/agents/figures.py`) can send a figure's actual image to a
+  vision-capable model, falling back to caption-only when none is configured.
 - **Eval harness** — precision@k / recall@k / citation-faithfulness scoring over a labelled set
   (`scholarmind eval`), with centralized guardrails (confidence threshold, cite-only-ingested).
 
-**152 tests** — 94 run fully offline with no API key (fast CI gate); the remaining 58 download
+**310 tests** — 205 run fully offline with no API key (fast CI gate); the remaining 105 download
 models or exercise live LLM/network paths.
 
 ## Quickstart
@@ -76,7 +107,8 @@ uv run scholarmind chat "summarize retrieval-augmented generation"
 uv run scholarmind serve
 ```
 
-Run `uv run scholarmind --help` to see all commands (`ingest`, `ask`, `chat`, `serve`, `app`, `eval`).
+Run `uv run scholarmind --help` to see all commands (`ingest`, `dedupe`, `delete`, `ask`, `chat`,
+`serve`, `app`, `eval`).
 See the [User Guide](docs/USER_GUIDE.md) for the full command/config reference and a walkthrough.
 
 ### Web app
@@ -88,6 +120,59 @@ a thin UI layer over the same engine functions the CLI and API use — no separa
 
 > Embedded Qdrant is single-process: don't run the web app and `scholarmind serve` against the
 > same `QDRANT_PATH` at the same time.
+
+#### Agents in the web app
+
+Below Ask, an **Agents** tab strip exposes the five domain agents, plus a citation/verify
+utility:
+
+| Tab | What it does | Input |
+|---|---|---|
+| Summarize | Pick a paper from the dropdown to summarize **that paper only** (all its chunks, in reading order, structured as Overview/Methods/Findings/Limitations), or switch to "Across whole library (by topic)" for the old free-text mode | dropdown, or a topic like `reinforcement learning from human feedback` |
+| Gap analysis | Synthesizes across your whole library for themes, contradictions, open questions | free text, e.g. `reinforcement learning from human feedback` |
+| Methodology | Free-text advice on study design/stats | free text |
+| Writing | Section-type picker (Related Work/Introduction/Discussion/Abstract), multi-paper scope, optional voice notes; never returns an uncited sentence; a "Check novelty" action on the result | topic/focus text; picker + multi-select for the rest |
+| Discover | Three sub-tabs: **My library** (browses already-ingested papers, no network), **Literature search** (arXiv + Semantic Scholar + OpenAlex, with an ingest action), **Citation graph** (1-hop references/citing papers via Semantic Scholar, with an ingest action) | topic text, or a DOI/S2 paper ID for the citation graph |
+| Citation / verify | Runs citation verification + APA/BibTeX formatting on any pasted `[N]`-marked draft and its source list | paste draft text and a numbered source list |
+| References & export | Pick a style (APA/MLA/Chicago/IEEE/Vancouver), export selected-or-all papers as `.bib`, push to Zotero, or export the latest Writing draft as a zipped LaTeX bundle (`draft.tex` + `references.bib`) | checkboxes to select papers; Zotero key/library ID live in the sidebar |
+| Figures & tables | Browse one paper's extracted tables (rendered), equations, and figures (thumbnailed); ask a question about a specific figure (image sent to `VISION_MODEL` if configured, else caption-only) | pick a paper; free-text question per figure |
+
+**To summarize one paper, pick it from the dropdown — don't type the filename.** The engine has
+no way to match a filename against paper content; a bare topic/filename search runs
+library-wide semantic retrieval and can pull in unrelated chunks. The Ask panel has the same
+single-paper picker as an optional scope filter (default: all papers); Writing has a
+multi-paper picker instead (`paper_id` `MatchAny` over the selection) — Gap analysis and
+Methodology remain library-wide only.
+
+Summarize/Gap analysis/Methodology/Writing all show the same Sources and Verification panels as
+Ask — the web app composes `verify_citations` + `format_and_verify` around each agent's raw
+output itself, since the orchestrator's automatic citation verification only applies to the Ask
+path.
+
+**Writing never returns an uncited claim** — any sentence without a `[N]` marker is stripped
+from the draft before it's shown (`writing._strip_uncited_sentences`), not just discouraged by
+the prompt. A **Check novelty of this draft** button then runs an advisory (not
+plagiarism-verdict) overlap check via the same retrieval+rerank pipeline as everything else,
+optionally also searching arXiv/Semantic Scholar/OpenAlex.
+
+**Discovery results merge duplicates across sources (by DOI, else normalized title) and flag
+anything already in your library.** Ingesting a result downloads its open-access PDF when one
+exists; otherwise it stores a lightweight title+abstract record instead of failing. Semantic
+Scholar's free tier is rate-limited — set `S2_API_KEY` in `.env` to raise it. A source that's
+down or rate-limited shows a warning next to whatever the other sources still returned, never a
+traceback.
+
+**Table/figure/equation extraction never blocks ingestion.** Every step (opening the PDF with
+PyMuPDF, one table, one image, PyMuPDF being missing entirely) is individually wrapped, so a
+paper with none of these — or a PDF PyMuPDF can't parse — still ingests with its body text
+exactly as before, just with fewer extra chunks. Figure Q&A is opt-in: set `VISION_MODEL` to an
+actual multimodal model (not a text-only one) to send the image itself; leave it empty and it
+always answers from the caption alone, explicitly told not to guess at what it can't see.
+
+**Zotero push writes only** (no read/import) and needs an API key + library ID, configured in
+the sidebar for the current session or via `.env` — never commit a real key. An unconfigured
+Zotero panel shows a note instead of a button; a rejected key/library ID shows a readable
+"403 Forbidden" message.
 
 ## Configuration
 
@@ -108,9 +193,16 @@ All settings live in `scholarmind/config.py` (pydantic-settings) and are read fr
 | `RETRIEVAL_CANDIDATE_K` | `20` | Candidates fetched before reranking |
 | `RETRIEVAL_TOP_K` | `5` | Results returned after reranking |
 | `RETRIEVAL_MIN_RERANK_SCORE` | `-7.0` | Cross-encoder score below which a chunk is refused |
+| `S2_API_KEY` | *(empty)* | Optional Semantic Scholar key — raises the shared rate limit for literature discovery/citation-graph lookups |
+| `ZOTERO_API_KEY` | *(empty)* | Optional — only needed to push references to Zotero |
+| `ZOTERO_LIBRARY_ID` | *(empty)* | Your Zotero user or group library ID |
+| `ZOTERO_LIBRARY_TYPE` | `user` | `user` or `group` |
+| `VISION_MODEL` | *(empty)* | Optional vision-capable model for Figure Q&A to use the actual figure image instead of caption-only |
 
 No API key is needed to ingest, retrieve, or run the offline test suite — only the LLM-backed
-answer/verification/agent steps require one.
+answer/verification/agent steps require one. `S2_API_KEY`, the `ZOTERO_*` variables, and
+`VISION_MODEL` are all optional; each feature works without them, or is simply unavailable (or
+falls back) in the UI until configured.
 
 ## Roadmap / build phases
 
@@ -126,9 +218,25 @@ All phases below are implemented and tested.
 8. ✅ Eval harness & guardrails
 9. ✅ Docs & release polish
 10. ✅ Streamlit web app (`scholarmind app`)
+11. ✅ Literature discovery (arXiv/Semantic Scholar/OpenAlex search + ingest) and a 1-hop
+    citation graph (Semantic Scholar references/citations + ingest)
+12. ✅ Reference management & export (MLA/Chicago/IEEE/Vancouver styles, bulk BibTeX export,
+    Zotero push, LaTeX/Overleaf draft export)
+13. ✅ Structured writing (section types, multi-paper scope, voice notes, no-uncited-claims
+    guarantee) and an advisory novelty/overlap check
+14. ✅ Multimodal ingestion (tables, equations, figures extracted alongside text, each a
+    retrievable/citable chunk) and gated, configurable Figure Q&A
+15. ✅ Library management — duplicate-paper detection (`scholarmind dedupe`), per-paper deletion
+    (`scholarmind delete` + a web-app delete panel), and a Crossref → OpenAlex → Semantic Scholar
+    metadata fallback chain (with self-healing, non-permanent negative caching) for references the
+    PDF's own metadata can't supply
 
-Future ideas: additional source connectors (HTML, arXiv/DOI), more citation styles, an OpenAlex
-fallback for metadata, and a real Zotero export.
+Future ideas: additional source connectors (HTML, DOI-direct fetch), a Zotero read/import path,
+expanding the citation graph past one hop, a real web-search backend for the novelty check
+(today it optionally checks arXiv/Semantic Scholar/OpenAlex, not the general web), true equation
+OCR/LaTeX recognition (today's equation extraction is a numbered-line + math-symbol heuristic,
+not an ML-based recognizer), and a stricter Crossref match-confidence check (very short/generic
+titles can currently match an unrelated paper — tracked as a follow-up).
 
 ## Contributing
 

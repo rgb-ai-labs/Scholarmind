@@ -3,6 +3,13 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from scholarmind.ingestion.multimodal import (
+    ExtractedEquation,
+    ExtractedFigure,
+    ExtractedTable,
+    extract_equations,
+)
+
 if TYPE_CHECKING:
     from scholarmind.ingestion.loader import RawDocument
 
@@ -25,6 +32,12 @@ class ParsedDocument:
     year: int | None
     venue: str | None
     sections: list[ParsedSection]
+    source_filename: str | None = None
+    doi: str | None = None
+    is_metadata_only: bool = False  # True for discovery records ingested without a PDF
+    tables: list[ExtractedTable] = field(default_factory=list)
+    equations: list[ExtractedEquation] = field(default_factory=list)
+    figures: list[ExtractedFigure] = field(default_factory=list)
 
 
 @dataclass
@@ -67,7 +80,7 @@ def _extract_year(subject: str | None) -> int | None:
 
 
 def parse_document(raw: "RawDocument") -> ParsedDocument:
-    paper_id = hashlib.sha256(raw.source_path.read_bytes()).hexdigest()
+    paper_id = raw.content_hash or hashlib.sha256(raw.source_path.read_bytes()).hexdigest()
 
     metadata = raw.pdf_metadata or {}
     title = metadata.get("/Title") or None
@@ -110,4 +123,8 @@ def parse_document(raw: "RawDocument") -> ParsedDocument:
         year=year,
         venue=venue,
         sections=parsed_sections,
+        source_filename=raw.source_path.name,
+        tables=raw.tables,
+        equations=extract_equations(raw.pages),
+        figures=raw.figures,
     )

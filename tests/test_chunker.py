@@ -1,10 +1,16 @@
 import re
 
 from scholarmind.ingestion.chunker import Chunk, chunk_document
+from scholarmind.ingestion.multimodal import ExtractedEquation, ExtractedFigure, ExtractedTable
 from scholarmind.ingestion.parser import ParsedDocument, ParsedSection
 
 
-def _doc(sections: list[ParsedSection]) -> ParsedDocument:
+def _doc(
+    sections: list[ParsedSection],
+    tables: list[ExtractedTable] | None = None,
+    equations: list[ExtractedEquation] | None = None,
+    figures: list[ExtractedFigure] | None = None,
+) -> ParsedDocument:
     return ParsedDocument(
         paper_id="paper-id-123",
         title="Sample Title",
@@ -12,6 +18,9 @@ def _doc(sections: list[ParsedSection]) -> ParsedDocument:
         year=2024,
         venue="ICML",
         sections=sections,
+        tables=tables or [],
+        equations=equations or [],
+        figures=figures or [],
     )
 
 
@@ -122,3 +131,109 @@ def test_empty_section_is_excluded_and_chunk_index_stays_contiguous():
     assert len(chunks) == 1
     assert chunks[0].section == "Real"
     assert chunks[0].chunk_index == 0
+
+
+def test_text_chunks_default_to_chunk_type_text_with_no_image_path():
+    doc = _doc(
+        [ParsedSection(heading="Abstract", text="Some text.", page_start=1, page_end=1)]
+    )
+
+    [chunk] = chunk_document(doc, chunk_size=1000, chunk_overlap=0)
+
+    assert chunk.chunk_type == "text"
+    assert chunk.image_path is None
+
+
+def test_table_produces_a_table_typed_chunk_continuing_the_index_sequence():
+    doc = _doc(
+        [ParsedSection(heading="Abstract", text="Some text.", page_start=1, page_end=1)],
+        tables=[
+            ExtractedTable(
+                page=2, caption="Table 1: Results.", markdown="|A|B|\n|---|---|\n|1|2|\n"
+            )
+        ],
+    )
+
+    chunks = chunk_document(doc, chunk_size=1000, chunk_overlap=0)
+
+    assert len(chunks) == 2
+    table_chunk = chunks[1]
+    assert table_chunk.chunk_type == "table"
+    assert table_chunk.chunk_index == 1  # continues the text chunk's index sequence
+    assert table_chunk.page_start == 2
+    assert table_chunk.page_end == 2
+    assert table_chunk.section == "Table 1: Results."
+    assert "Table 1: Results." in table_chunk.text
+    assert "|A|B|" in table_chunk.text
+    assert table_chunk.paper_id == doc.paper_id
+    assert table_chunk.title == doc.title
+
+
+def test_table_without_caption_still_produces_a_usable_chunk():
+    doc = _doc(
+        [],
+        tables=[ExtractedTable(page=1, caption=None, markdown="|A|\n|---|\n|1|\n")],
+    )
+
+    [chunk] = chunk_document(doc, chunk_size=1000, chunk_overlap=0)
+
+    assert chunk.chunk_type == "table"
+    assert chunk.section == "Table (page 1)"
+    assert "|A|" in chunk.text
+
+
+def test_equation_produces_an_equation_typed_chunk_with_context():
+    doc = _doc(
+        [],
+        equations=[
+            ExtractedEquation(page=3, text="E = mc^2 (1)", context="Einstein derived E = mc^2 (1).")
+        ],
+    )
+
+    [chunk] = chunk_document(doc, chunk_size=1000, chunk_overlap=0)
+
+    assert chunk.chunk_type == "equation"
+    assert chunk.page_start == 3
+    assert chunk.page_end == 3
+    assert "E = mc^2 (1)" in chunk.text
+    assert "Einstein derived" in chunk.text
+
+
+def test_figure_produces_a_figure_typed_chunk_with_image_path():
+    doc = _doc(
+        [],
+        figures=[
+            ExtractedFigure(page=4, caption="Figure 2: Overview.", image_path="/tmp/fig2.png")
+        ],
+    )
+
+    [chunk] = chunk_document(doc, chunk_size=1000, chunk_overlap=0)
+
+    assert chunk.chunk_type == "figure"
+    assert chunk.image_path == "/tmp/fig2.png"
+    assert chunk.page_start == 4
+    assert "Figure 2: Overview." in chunk.text
+
+
+def test_figure_without_caption_uses_placeholder_text():
+    doc = _doc([], figures=[ExtractedFigure(page=1, caption=None, image_path="/tmp/f.png")])
+
+    [chunk] = chunk_document(doc, chunk_size=1000, chunk_overlap=0)
+
+    assert "(no caption detected)" in chunk.text
+    assert chunk.section == "Figure (page 1)"
+
+
+def test_tables_equations_figures_all_coexist_with_text_chunks_and_unique_indices():
+    doc = _doc(
+        [ParsedSection(heading="Abstract", text="Some text.", page_start=1, page_end=1)],
+        tables=[ExtractedTable(page=1, caption="Table 1.", markdown="|A|\n|---|\n|1|\n")],
+        equations=[ExtractedEquation(page=1, text="x = y (1)", context="x = y (1)")],
+        figures=[ExtractedFigure(page=1, caption="Figure 1.", image_path="/tmp/f.png")],
+    )
+
+    chunks = chunk_document(doc, chunk_size=1000, chunk_overlap=0)
+
+    assert len(chunks) == 4
+    assert [c.chunk_index for c in chunks] == [0, 1, 2, 3]
+    assert [c.chunk_type for c in chunks] == ["text", "table", "equation", "figure"]

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from scholarmind.guardrails import split_citation_markers
 from scholarmind.retrieval.dense import DenseResult
 
-_MARKER_PATTERN = re.compile(r"\[(\d+(?:\s*,\s*\d+)*)\]")
+CITATION_MARKER_PATTERN = re.compile(r"\[(\d+(?:\s*,\s*\d+)*)\]")
 
 
 @dataclass
@@ -18,6 +18,8 @@ class Citation:
     page_start: int
     page_end: int
     text: str
+    chunk_type: str = "text"  # "text" | "table" | "equation" | "figure"
+    image_path: str | None = None  # populated only when chunk_type == "figure"
 
 
 @dataclass
@@ -48,7 +50,7 @@ def build_source_block(sources: list["DenseResult"]) -> str:
 
 def extract_citation_markers(text: str) -> list[int]:
     markers: list[int] = []
-    for match in _MARKER_PATTERN.finditer(text):
+    for match in CITATION_MARKER_PATTERN.finditer(text):
         for part in match.group(1).split(","):
             marker = int(part.strip())
             if marker not in markers:
@@ -74,6 +76,8 @@ def verify_citations(text: str, sources: list["DenseResult"]) -> VerifiedAnswer:
                 page_start=source.page_start,
                 page_end=source.page_end,
                 text=source.text,
+                chunk_type=source.chunk_type,
+                image_path=source.image_path,
             )
         )
 

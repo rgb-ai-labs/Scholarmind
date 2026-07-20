@@ -20,6 +20,11 @@ def _print_ingest_result(result: "IngestResult") -> None:
         f"Ingested {result.papers_ingested} paper(s), {result.chunks_created} chunk(s) "
         f"into collection '{result.collection_name}'."
     )
+    for title in result.duplicate_title_warnings:
+        typer.echo(
+            f"Warning: '{title}' already appears to be in your library under a different "
+            "ID — this may be a duplicate. Run `scholarmind dedupe` to review."
+        )
 
 
 def _print_answer_result(result: "AnswerResult", question: str) -> None:
@@ -159,6 +164,93 @@ def _print_scorecard(scorecard: "Scorecard") -> None:
             f"recall@{scorecard.k}={case.recall_at_k:.3f} "
             f"faithfulness={case.faithfulness:.3f}"
         )
+
+
+@app.command(
+    help=(
+        "Find papers that are duplicated under different IDs (same normalized title, "
+        "different content hash) and remove the extra copies. Dry-run by default."
+    )
+)
+def dedupe(
+    apply: bool = typer.Option(
+        False, "--apply", help="Actually delete the duplicate papers' chunks (default: dry-run)."
+    ),
+) -> None:
+    from scholarmind.ingestion.dedupe import delete_papers, find_duplicate_paper_groups
+
+    settings = get_settings()
+    groups = find_duplicate_paper_groups(settings)
+
+    if not groups:
+        typer.echo("No duplicate papers found.")
+        return
+
+    for group in groups:
+        typer.echo(f"'{group.title}':")
+        typer.echo(f"  keep:   {group.keep.paper_id} ({group.keep.chunk_count} chunk(s))")
+        for paper in group.remove:
+            typer.echo(f"  remove: {paper.paper_id} ({paper.chunk_count} chunk(s))")
+
+    if not apply:
+        typer.echo("")
+        typer.echo(
+            f"Dry run - {len(groups)} duplicate group(s) found. Re-run with --apply to remove them."
+        )
+        return
+
+    remove_ids = [paper.paper_id for group in groups for paper in group.remove]
+    deleted = delete_papers(remove_ids, settings)
+    typer.echo("")
+    typer.echo(f"Removed {deleted} chunk(s) across {len(remove_ids)} duplicate paper(s).")
+
+
+@app.command(
+    help=(
+        "Delete one ingested paper from the library, matched by paper ID, ID prefix, or a "
+        "distinctive part of its title. Dry-run by default; the source PDF is left in place."
+    )
+)
+def delete(
+    identifier: str = typer.Argument(
+        ..., help="A paper ID, an ID prefix, or a distinctive part of the title."
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Actually delete (default: dry-run preview)."
+    ),
+) -> None:
+    from scholarmind.retrieval.papers import delete_papers, find_papers_by_identifier
+
+    settings = get_settings()
+    matches = find_papers_by_identifier(identifier, settings)
+
+    if not matches:
+        typer.echo(f"No paper matched '{identifier}'. Nothing to delete.")
+        raise typer.Exit(code=1)
+
+    if len(matches) > 1:
+        typer.echo(
+            f"'{identifier}' matched {len(matches)} papers — be more specific, or use an exact "
+            "paper ID:"
+        )
+        for paper in matches:
+            typer.echo(f"  {paper.paper_id}  {paper.label} ({paper.chunk_count} chunk(s))")
+        raise typer.Exit(code=1)
+
+    paper = matches[0]
+    typer.echo(f"{paper.paper_id}  {paper.label} ({paper.chunk_count} chunk(s))")
+
+    if not yes:
+        typer.echo("")
+        typer.echo(
+            "Dry run - re-run with --yes to delete this paper. (Its PDF in the uploads folder "
+            "is kept, so you can re-ingest it later.)"
+        )
+        return
+
+    removed = delete_papers([paper.paper_id], settings)
+    typer.echo("")
+    typer.echo(f"Deleted '{paper.label}' ({removed} chunk(s) removed).")
 
 
 @app.command(help="Run the labelled eval set and print a precision/recall/faithfulness scorecard.")

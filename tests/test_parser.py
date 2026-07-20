@@ -5,6 +5,7 @@ from scholarmind.ingestion.loader import RawDocument, load_pdf
 from scholarmind.ingestion.parser import ParsedDocument, parse_document
 
 FIXTURE = Path(__file__).parent / "fixtures" / "sample_paper.pdf"
+MULTIMODAL_FIXTURE = Path(__file__).parent / "fixtures" / "sample_paper_multimodal.pdf"
 
 
 def _parsed_fixture() -> ParsedDocument:
@@ -88,3 +89,36 @@ def test_parse_document_subject_non_year_does_not_set_year():
     )
     parsed = parse_document(raw)
     assert parsed.year is None
+
+
+def test_parse_document_reuses_loader_content_hash_as_paper_id_without_rereading_bytes():
+    raw = RawDocument(
+        source_path=Path("/does/not/exist.pdf"),
+        pages=["Abstract\nsome text"],
+        pdf_metadata={},
+        content_hash="precomputed-hash-value",
+    )
+    parsed = parse_document(raw)
+    assert parsed.paper_id == "precomputed-hash-value"
+
+
+def test_parse_document_text_only_fixture_has_no_multimodal_content():
+    parsed = _parsed_fixture()
+    assert parsed.tables == []
+    assert parsed.equations == []
+    assert parsed.figures == []
+
+
+def test_parse_document_extracts_table_equation_and_figure_from_multimodal_fixture(tmp_path):
+    raw = load_pdf(MULTIMODAL_FIXTURE, images_dir=tmp_path / "images")
+    parsed = parse_document(raw)
+
+    assert len(parsed.tables) == 1
+    assert "Table 1" in (parsed.tables[0].caption or "")
+
+    assert len(parsed.equations) == 1
+    assert "(1)" in parsed.equations[0].text
+
+    assert len(parsed.figures) == 1
+    assert "Figure 1" in (parsed.figures[0].caption or "")
+    assert Path(parsed.figures[0].image_path).is_file()

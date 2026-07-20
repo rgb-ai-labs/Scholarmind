@@ -4,9 +4,13 @@ import pytest
 _SLOW_MODULES = {
     "test_agents_base",
     "test_dense",
+    "test_delete",
     "test_discovery",
     "test_gap_analysis",
+    "test_ingestion_dedupe",
     "test_methodology",
+    "test_novelty",
+    "test_papers",
     "test_pipeline",
     "test_qa",
     "test_reranker",
@@ -36,6 +40,7 @@ _SLOW_TESTS = {
     "test_run_ingest_path",
     "test_run_ask_path",
     "test_cli_chat_ingest_command",
+    "test_ingest_candidate_metadata_only_record_is_searchable_end_to_end",
 }
 
 # Individual tests that make a live LLM or network call (each is also skipif-guarded).

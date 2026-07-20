@@ -33,7 +33,7 @@ cp .env.example .env                   # then edit .env and set LLM_API_KEY (see
 Verify the install with the fast, offline test suite (no key, no model download needed):
 
 ```bash
-uv run pytest -m "not slow and not llm" -q     # ~94 tests, ~20s
+uv run pytest -m "not slow and not llm" -q     # ~205 tests, ~20s
 uv run scholarmind --help                       # lists all commands
 ```
 
@@ -59,6 +59,11 @@ All settings live in `scholarmind/config.py` (pydantic-settings) and are read fr
 | `RETRIEVAL_CANDIDATE_K` | `20` | Candidates fetched (dense + sparse) before reranking |
 | `RETRIEVAL_TOP_K` | `5` | Results kept after reranking |
 | `RETRIEVAL_MIN_RERANK_SCORE` | `-7.0` | Cross-encoder score below which a chunk is dropped (drives the low-confidence refusal) |
+| `S2_API_KEY` | *(empty)* | Optional Semantic Scholar key — raises the shared rate limit for discovery/citation-graph lookups |
+| `ZOTERO_API_KEY` | *(empty)* | Optional — needed only to push references to Zotero from the web app |
+| `ZOTERO_LIBRARY_ID` | *(empty)* | Your Zotero user or group library ID |
+| `ZOTERO_LIBRARY_TYPE` | `user` | `user` or `group`, matching the library ID above |
+| `VISION_MODEL` | *(empty)* | Optional vision-capable model for Figure Q&A to use the actual figure image, not just its caption — see [Multimodal content](#multimodal-content-tables-equations-and-figures) below |
 
 ## Getting an LLM key
 
@@ -84,8 +89,18 @@ Run any command with `uv run scholarmind <command>` (or `python -m scholarmind.c
 scholarmind ingest PATH
 ```
 - `PATH` (required) — a single PDF file, or a directory of PDFs (scanned non-recursively).
-- No API key required. Re-ingesting the same file updates it in place (idempotent, keyed by a
-  content hash) rather than duplicating.
+- No API key required. Re-ingesting the *same* file updates it in place (idempotent, keyed by a
+  content hash) rather than duplicating — safe to re-run any time, including just to backfill
+  table/figure/equation chunks for a paper ingested before that feature existed.
+- Also extracts tables, equations, and figures (saved as images) as their own retrievable,
+  citable chunks — see [Multimodal content](#multimodal-content-tables-equations-and-figures).
+  This never blocks ingestion: a paper with no extractable tables/figures/equations, or a
+  broken/unsupported one, still ingests text-only exactly as before.
+- **Duplicate-title warning:** if the paper's title normalizes to match a paper already in your
+  library under a *different* ID (e.g. a re-downloaded or regenerated PDF whose bytes differ
+  from the copy you already have), ingestion still proceeds but prints a warning — content-hash
+  identity alone can't catch "same paper, different file." See [`dedupe`](#dedupe--find-and-remove-duplicate-papers)
+  below to review and clean these up.
 
 **Example**
 ```bash
@@ -94,6 +109,88 @@ uv run scholarmind ingest papers/rag_survey.pdf
 **Output shape**
 ```
 Ingested 1 paper(s), 5 chunk(s) into collection 'scholarmind_chunks'.
+```
+**Output shape (possible duplicate detected)**
+```
+Ingested 1 paper(s), 5 chunk(s) into collection 'scholarmind_chunks'.
+Warning: 'A Study of Retrieval-Augmented Generation' already appears to be in your library under
+a different ID — this may be a duplicate. Run `scholarmind dedupe` to review.
+```
+
+### `dedupe` — find and remove duplicate papers
+
+```
+scholarmind dedupe [--apply]
+```
+- No API key required. Groups every paper in your library by a normalized title (case/
+  punctuation/whitespace-insensitive) and reports any group with more than one paper ID — this
+  is the cleanup counterpart to the warning `ingest` prints when it detects one.
+- **Dry-run by default** — prints which paper would be kept (the one with the most chunks;
+  ties broken by earliest ingestion, then paper ID) and which would be removed, without deleting
+  anything.
+- `--apply` — actually deletes the redundant papers' chunks from the store. This is
+  irreversible (the papers' vectors/text are gone; the original PDF files under your uploads
+  folder are untouched, so you can always re-ingest).
+
+**Example**
+```bash
+uv run scholarmind dedupe          # see what would change
+uv run scholarmind dedupe --apply  # actually remove the duplicates
+```
+**Output shape**
+```
+'A Study of Retrieval-Augmented Generation for Scholarly Question Answering':
+  keep:   128a0946c4d4... (5 chunk(s))
+  remove: 89541c6b53df... (5 chunk(s))
+
+Dry run - 1 duplicate group(s) found. Re-run with --apply to remove them.
+```
+```
+Removed 5 chunk(s) across 1 duplicate paper(s).   # after --apply
+```
+**No duplicates found**
+```
+No duplicate papers found.
+```
+
+### `delete` — remove one ingested paper
+
+```
+scholarmind delete IDENTIFIER [--yes]
+```
+- No API key required. Removes a single paper from your library by `IDENTIFIER`, resolved in a
+  predictable order: an **exact paper ID** first, then a **paper-ID prefix** (the short IDs shown
+  by `dedupe`/`delete`), then a **case-insensitive substring of the title**.
+- **Dry-run by default** — prints the matched paper without deleting. Add `--yes` (or `-y`) to
+  actually remove it. Deletion takes out the paper's chunks from the search index; the **original
+  PDF in your uploads folder is left untouched**, so you can always re-ingest it.
+- **Safe on ambiguity** — if the identifier matches more than one paper, it lists them and deletes
+  nothing, asking you to be more specific or use an exact ID. If it matches nothing, it says so
+  and exits non-zero.
+- Prefer a browser? The web app has a **"Your library — manage & delete"** panel with a per-paper
+  delete button and a confirmation step (see [Web app](#web-app) below).
+
+**Example**
+```bash
+uv run scholarmind delete "retrieval-augmented"        # dry-run preview by title match
+uv run scholarmind delete 89541c6b53df --yes           # delete by ID prefix, for real
+```
+**Output shape (dry-run)**
+```
+89541c6b53df...  A Study of Retrieval-Augmented Generation for Scholarly Question Answering (5 chunk(s))
+
+Dry run - re-run with --yes to delete this paper. (Its PDF in the uploads folder is kept, so you
+can re-ingest it later.)
+```
+**Output shape (deleted)**
+```
+Deleted 'A Study of Retrieval-Augmented Generation for Scholarly Question Answering' (5 chunk(s) removed).
+```
+**Output shape (ambiguous — nothing deleted)**
+```
+'retrieval' matched 2 papers — be more specific, or use an exact paper ID:
+  89541c6b53df...  A Study of Retrieval-Augmented Generation... (5 chunk(s))
+  a1b2c3d4e5f6...  Retrieval Methods in Practice (3 chunk(s))
 ```
 
 ### `ask` — grounded, cited answer
@@ -265,11 +362,19 @@ uv run scholarmind app                # -> opens http://localhost:8501
 2. **Upload & ingest** — drag PDFs into the uploader, click **Ingest uploaded papers**. Each
    file gets a success/error line (papers + chunks ingested), never a raw traceback. The
    library counter in the sidebar updates automatically.
-3. **Ask** — type a question in the chat box at the bottom. The answer renders with its inline
-   `[N]` markers, an expandable **Sources** panel (title/authors/year/page per marker), and an
-   expandable **Verification** panel showing which claims were confirmed against their source
-   and which were flagged as unsupported (with the reason). If retrieval finds nothing, you get
-   a friendly "No relevant sources found" box, not an error.
+3. **Your library — manage & delete** — an expander under the uploader lists every ingested
+   paper with a **Delete** button. Deleting is a deliberate two-step action: the first click
+   *arms* the delete and surfaces a confirmation ("Delete X? …"), and only **Confirm delete**
+   actually removes it — so nothing is one click from deletion. It removes the paper's chunks
+   from the search index (its PDF in the uploads folder is kept, so it's re-ingestable); the
+   sidebar count updates and a toast confirms. This is the browser equivalent of the
+   [`delete`](#delete--remove-one-ingested-paper) CLI command.
+4. **Ask** — pick a **Scope** (default "All papers", or one specific ingested paper) and type a
+   question in the chat box at the bottom. The answer renders with its inline `[N]` markers, an
+   expandable **Sources** panel (title/authors/year/page per marker), and an expandable
+   **Verification** panel showing which claims were confirmed against their source and which
+   were flagged as unsupported (with the reason). If retrieval finds nothing, you get a friendly
+   "No relevant sources found" box, not an error.
 
 The web app is a thin UI over `run_ingestion`, `answer_question`, and `format_and_verify` — the
 exact same functions the CLI calls, reading and writing the exact same `QDRANT_PATH`, so
@@ -277,6 +382,238 @@ whatever you ingest via `scholarmind ingest` shows up here and vice versa.
 
 > Embedded Qdrant is single-process — don't run the web app and `scholarmind serve` against the
 > same `QDRANT_PATH` at the same time.
+
+### Agents in the web app
+
+Below **Ask**, an **Agents** section holds a tab per domain agent plus a citation utility. All
+of these call the exact functions `chat`/`scholarmind/agents/` use — there's no separate UI
+logic.
+
+- **Summarize** (`summarize` / `summarize_paper`) — pick a paper from the dropdown to summarize
+  **just that paper**: the engine pulls every one of its chunks in reading order (not a topic
+  search) and produces a structured Overview/Methods/Findings/Limitations summary, cited only
+  against that paper's own sources. **To summarize one paper, pick it from the dropdown — don't
+  type its filename into a search box**; the engine has no way to match a filename against
+  content, so typing one into a free-text field returns unrelated chunks. Switch to
+  "Across whole library (by topic)" for the old free-text, topic-driven mode.
+- **Gap analysis** (`analyze_gaps`) — synthesizes across your whole library for themes,
+  contradictions, and open questions. Type e.g. `reinforcement learning from human feedback`.
+- **Methodology** (`extract_methodology`) — free-text advice on study design/statistics. Type
+  e.g. `What sample size justification do these papers use?`.
+- **Writing** (`draft_section`) — see
+  [Writing and the novelty check](#writing-and-the-novelty-check) below: a real section-type
+  picker (Related Work / Introduction / Discussion / Abstract), a multi-paper scope, optional
+  voice notes, and a "never emit an uncited claim" guarantee — plus an advisory novelty/overlap
+  check on the resulting draft.
+- **Discover** — three sub-tabs (see [Literature discovery and the citation graph](#literature-discovery-and-the-citation-graph)
+  below): **My library** (unchanged — browses papers already ingested, no network call),
+  **Literature search** (external arXiv/Semantic Scholar/OpenAlex search with an ingest
+  action), and **Citation graph** (references/citing papers for one paper, one hop out).
+- **Citation / verify** — paste any `[N]`-marked draft plus its numbered source list (one line
+  each: `N | title | authors | year | section | pages`) to run the same `verify_citations` +
+  `format_and_verify` pipeline Ask uses, without needing a fresh retrieval.
+- **References & export** — see
+  [Reference management and export](#reference-management-and-export) below: pick a citation
+  style, export a `.bib` file, push references to Zotero, or export a Writing-agent draft as a
+  LaTeX/Overleaf bundle.
+- **Figures & tables** — see
+  [Multimodal content](#multimodal-content-tables-equations-and-figures) below: browse one
+  paper's extracted tables (rendered), equations, and figures (with thumbnails), and ask a
+  question about a specific figure.
+
+**Paper scoping:** Ask and Summarize show a single-paper picker; Writing shows a multi-paper
+picker (see below). All are backed by `retrieval.papers.list_papers()`, which lists every
+distinct `paper_id` ingested so far, labeled with the paper's title when the PDF had `/Title`
+metadata, falling back to the source filename when it didn't (many PDFs — especially arXiv
+downloads — have no title metadata, so you'll often see a filename like `1036663.pdf` in the
+picker; that's expected, not a bug). Selecting paper(s) applies a real Qdrant payload filter
+(`paper_id` match, or `paper_id` in a list for Writing's multi-select) before retrieval, so only
+those papers' chunks are ever searched. Gap analysis, Methodology, and Discover are unscoped —
+they always run across the whole library.
+
+Summarize/Gap analysis/Methodology/Writing show the same **Sources** and **Verification**
+expanders as Ask. The orchestrator's `chat`/`run()` path only auto-runs citation verification
+for `ask` (see `orchestrator/graph.py`'s `final` node) — the web app calls `verify_citations`
+then `format_and_verify` itself on each agent's raw output to match that behavior, reusing the
+same functions rather than adding new citation logic.
+
+### Literature discovery and the citation graph
+
+`discover` (`scholarmind/agents/discovery.py`) only ever browses papers you've already
+ingested — it makes no network call. Finding and pulling in *new* papers is a separate,
+explicitly-named capability in `scholarmind/discovery/` (arXiv, Semantic Scholar, and
+OpenAlex clients + dedupe + a Semantic Scholar–backed citation graph), exposed as two more
+sub-tabs under **Discover**:
+
+- **Literature search** — type a topic; it queries all three sources (arXiv's Atom API,
+  Semantic Scholar's `/paper/search`, OpenAlex's `/works?search=`), merges results
+  that are clearly the same paper (same DOI, or the same title after normalizing), and flags any
+  result that matches a paper already in your library (by DOI, else by a normalized-title hash)
+  with "Already in library" instead of an ingest button. Each remaining result shows its
+  source(s) (arXiv/Semantic Scholar/OpenAlex), authors, year, venue, and an expandable abstract,
+  with an **Ingest** button.
+  - If the result has an open-access PDF URL, ingesting downloads and runs it through the same
+    `run_ingestion` pipeline as an upload.
+  - If it doesn't — or the PDF download fails or isn't actually a PDF — it's ingested as a
+    **lightweight, metadata-only record** instead: just the title and abstract, chunked and
+    embedded like any other paper, so it's fully searchable and citable, but visibly limited to
+    what the abstract says. The library picker (used by Ask/Summarize) shows a
+    `PaperSummary.is_metadata_only` flag for these.
+- **Citation graph** — pick a library paper (its stored DOI is used automatically if present),
+  or type a DOI or Semantic Scholar paper ID directly, then fetch **References** (what it cites)
+  and **Cited by** (what cites it), one hop out, via Semantic Scholar's `/paper/{id}/references`
+  and `/paper/{id}/citations` endpoints. If no S2 ID/DOI is given, it resolves one via a
+  best-effort title search — treat that resolution as approximate, not exact. Each entry shows
+  the same ingest action as Literature search. OpenAlex is not used for the citation graph itself
+  (only for search) since Semantic Scholar's paperId-keyed endpoints are simpler and sufficient
+  for a 1-hop graph.
+
+**Rate limits:** arXiv and OpenAlex don't require a key for this usage. Semantic Scholar's
+unauthenticated tier is shared and easy to rate-limit (`429`); set `S2_API_KEY` in `.env` (free,
+from Semantic Scholar) to raise it. Any source that's unreachable or rate-limited shows a
+readable warning next to the results from the sources that did work — one source failing never
+blocks the others or surfaces a traceback.
+
+### Writing and the novelty check
+
+The **Writing** tab (`scholarmind/agents/writing.py`) drafts a section grounded ONLY in
+retrieved chunks:
+
+- **Section type** — a real picker with four options, each with its own prompt (not just a
+  free-text hint folded into one generic query, like the other agents): **Related Work**
+  (groups sources by theme, calls out disagreement between them), **Introduction**
+  (frames background/context/open questions — never invents the user's own unstated
+  contribution), **Discussion** (contrasts and interprets sources against each other), and
+  **Abstract** (a concise, cited summary of what the retrieved literature says — this is a
+  summary of *the retrieved sources*, not the user's own unpublished paper, since the engine
+  has no access to results the user hasn't given it).
+- **Scope** — a multi-select paper picker (leave empty for the whole library). Internally this
+  is a real Qdrant `paper_id` filter using `MatchAny` over the selected papers (the same
+  mechanism Ask/Summarize use for a single paper, extended to a list) — not a soft nudge.
+- **Voice notes** (optional) — free text folded into the prompt as a style instruction (e.g.
+  "keep it formal, under 200 words"), explicitly told not to come at the cost of dropping a
+  citation.
+- **Never emit an uncited claim** — after generation, every sentence is checked for a `[N]`
+  marker; any sentence with none is silently dropped from what you see. This is an actual
+  guarantee enforced in code (`writing._strip_uncited_sentences`), not just a prompt
+  instruction — though the LLM is also instructed this way, since dropping bad output after
+  the fact is a worse experience than the model getting it right. If everything gets dropped
+  (the model didn't cite anything), you'll see a message asking you to rephrase or widen the
+  scope rather than an empty draft with no explanation.
+- **Verification, reused as-is** — the resulting draft (whatever survives the uncited-sentence
+  filter) is run through the exact same `verify_citations` → `format_and_verify` pipeline as
+  every other agent panel, showing **Sources** and **Verification** (which citations are
+  actually supported by their passage, via `citations/verifier.py`'s existing claim verifier —
+  no new verification logic).
+
+**Novelty / overlap check** (`scholarmind/agents/novelty.py`) — once you have a draft, a
+**Check novelty of this draft** button appears below it. This is explicitly **advisory, not a
+plagiarism verdict** (labeled as such in the UI): it retrieves the most similar content to your
+draft via the same hybrid retrieval + rerank pipeline (`retrieval.search`) used everywhere else
+in the app — the reranker's relevance score doubles as the similarity signal, so no separate
+embedding-similarity system was built — and asks the LLM for a three-part plain-language read:
+what the draft overlaps with (naming the specific source), what looks like its distinct angle,
+and one or two things to check or differentiate further. Check **"Also check external
+literature"** to additionally search arXiv/Semantic Scholar/OpenAlex (the same discovery search
+built for literature search) as an approximation of a web search — real general web search isn't
+implemented, since this engine's only external search capability is over literature databases.
+Overlaps are shown as an expandable list with sources (and, for external results, which
+database they came from); any external source that's unavailable shows a warning without
+blocking the rest of the check.
+
+### Reference management and export
+
+The **References & export** tab (`scholarmind/citations/`) covers formatting, bulk export, a
+Zotero push, and a LaTeX/Overleaf export for a Writing-agent draft. Nothing here re-implements
+citation logic — it all goes through `citations/formatter.py`'s existing pluggable style
+registry (`format_reference(metadata, style)`), extended with four more styles.
+
+**Metadata resolution (Crossref → OpenAlex → Semantic Scholar):** every reference shown here is
+resolved *live*, on every render — not just from whatever the PDF itself had embedded (many
+LaTeX-built PDFs, e.g. ACM/IEEE templates, embed a `/Title` but no `/Author` at all).
+`citations/metadata.py::normalize_metadata` first queries Crossref by title; if that fails or
+scores too low, it falls back to OpenAlex, then Semantic Scholar (the same clients literature
+discovery uses), each checked against a title-similarity sanity check before being trusted. Only
+a *successful* resolution is cached for the rest of the session — a failed lookup (a paper not
+yet indexed anywhere, or a transient network hiccup) is retried on the next render rather than
+being stuck forever, so a paper that fails to resolve once will self-heal on its own once the
+data becomes available, with no re-ingestion or restart needed. If every source genuinely has
+nothing, you still get the paper's own title (and any author/year the PDF itself had) rather
+than a hard "Unknown Author (n.d.)" wherever the PDF provided something usable.
+
+- **Citation styles** — `APA` and `BibTeX` already existed; this adds **MLA**, **Chicago**
+  (author-date), **IEEE**, and **Vancouver**, all in the same `_FORMATTERS` registry. Pick a
+  style from the dropdown and every reference below re-renders in it. These are simplified,
+  journal-article-shaped formatters (no special handling for books, conference proceedings,
+  etc.) — the same level of simplification the original APA formatter already used.
+- **BibTeX export** — check specific papers, or leave none checked to export your whole
+  library, and click **Export .bib**. Keys are generated the same way as a single-reference
+  BibTeX export (`familyname` + `year`, e.g. `vaswani2017`); when two papers would collide
+  (same first author, same year), the export appends `a`, `b`, … to disambiguate so the file
+  stays valid.
+- **Zotero push** — configure a Zotero API key and library ID in the sidebar (session-only by
+  default; set `ZOTERO_API_KEY`/`ZOTERO_LIBRARY_ID` in `.env` to make it permanent — **never
+  commit real values to `.env`**). Selected (or all) references are pushed as `journalArticle`
+  items via Zotero's Web API (`POST /users|groups/{id}/items`, batched at 50 items per
+  request, the API's own limit). Read access isn't implemented — write is. If Zotero isn't
+  configured, the push button is replaced with a note instead of failing; a bad key/library ID
+  shows a readable "403 Forbidden" message, not a traceback.
+- **LaTeX / Overleaf export** — after drafting something in the **Writing** tab, switch to
+  **References & export**: it remembers the most recent draft's text and citations, replaces
+  every `[N]` (and combined `[N, M]`) marker with `\cite{key}` (skipping any marker that
+  didn't resolve to a real citation, rather than silently deleting it), and generates a
+  matching `.bib` file with the same keys. Both files are zipped into one download —
+  **upload both files from the zip to Overleaf** (or any local LaTeX install with `references.bib`
+  next to the `.tex` file). The draft body is TeX-escaped first (`%`, `&`, `$`, `_`, `{`, `}`,
+  `~`, `^`, backslash) so the export doesn't produce invalid LaTeX if the draft happens to
+  contain any of those characters.
+
+### Multimodal content (tables, equations, and figures)
+
+Ingestion (`scholarmind/ingestion/multimodal.py`, wired into `parser.py`/`chunker.py`) also
+extracts tables, equations, and figures from each PDF, alongside its body text — using
+**PyMuPDF** (already a dependency) for layout-aware table and image detection, plus a
+regex-based heuristic for equations. Each becomes its own retrievable, citable chunk tagged
+with a `chunk_type` (`"text"` / `"table"` / `"equation"` / `"figure"`):
+
+- **Tables** — PyMuPDF's built-in table detector (`page.find_tables()`) converts each detected
+  table to Markdown, with a caption pulled from the nearest "Table N: ..." line on the same
+  page. Stored and embedded as `Table (page P): <caption>\n\n<markdown>`, so it's searchable
+  by topic and citable like any text chunk — `[N]` in an answer can point straight at a table,
+  and the **Sources** panel renders it as an actual table, not just a page reference.
+- **Equations** — a conservative heuristic, not true equation OCR/LaTeX recognition: a line is
+  flagged as an equation only if it both ends with a parenthesized number (`"... (3)"`, the
+  common numbering convention) and contains a math symbol (`=`, `≤`, `∑`, Greek letters, etc.).
+  The equation text plus a sentence of surrounding context becomes its own chunk. This
+  deliberately favors missing an equation over flagging ordinary numbered prose — expect some
+  real equations (especially unnumbered ones) to be missed.
+- **Figures** — every embedded raster image is saved to disk (under a per-paper folder next to
+  your Qdrant store) and paired with a caption found the same way as tables ("Figure N: ...").
+  The chunk's embedded/searchable text is the caption; the image file path is carried in
+  metadata (`image_path`) for rendering and Figure Q&A. A page with several figures may
+  occasionally attach the wrong caption to an image — this is a heuristic nearest-caption
+  match, not true layout-proximity detection.
+- **Robustness** — every extraction step (opening the PDF with PyMuPDF, detecting tables on
+  one page, saving one image, PyMuPDF being unavailable at all) is individually wrapped so a
+  failure only means *fewer* tables/figures/equations extracted, never a failed ingestion. A
+  paper with no extractable tables, equations, or figures — or a corrupt/unusual PDF that
+  PyMuPDF can't open at all — still ingests with its body text exactly as before.
+
+**Figure Q&A** (`scholarmind/agents/figures.py`) lets you ask a question about one specific
+figure, from the **Figures & tables** tab. This is explicitly gated by config, not automatic
+intent detection — you pick the figure yourself:
+
+- If `VISION_MODEL` is set in `.env` **and** the figure's image file still exists on disk, the
+  question, the caption, and the actual image are sent to that model (via the same
+  `LLM_API_KEY`/`LLM_BASE_URL`, using an OpenAI-compatible multimodal request — an OpenRouter
+  Gemini vision model, e.g. `google/gemini-2.0-flash-001`, is a reasonable choice; it does not
+  need to be a "flash-lite"/text-only variant, since those can't accept image input).
+- Otherwise — `VISION_MODEL` unset, the image file missing, or the vision call raising any
+  error — it falls back to a **caption-only** answer using your regular `LLM_MODEL`, with a
+  prompt that explicitly tells the model it only has the caption, not the image, so it doesn't
+  guess at visual content it can't see.
+
+Set `VISION_MODEL=` (empty) to always use caption-only Figure Q&A.
 
 ---
 
@@ -317,8 +654,19 @@ whatever you ingest via `scholarmind ingest` shows up here and vice versa.
 
 - **Do I need Docker or a Qdrant server?** No. Qdrant runs embedded from a local folder.
 - **Does my data leave my machine?** Only the LLM calls (your question + retrieved passages) go
-  to the configured LLM provider. Ingestion, embedding, and retrieval are fully local. Metadata
-  lookup queries Crossref (public API) by paper title.
+  to the configured LLM provider. Ingestion, embedding, and retrieval are fully local. Reference
+  metadata resolution queries Crossref, then OpenAlex, then Semantic Scholar (all public APIs) by
+  paper title.
+- **Why does a reference show "Unknown Author (n.d.)"?** Every reference is resolved live against
+  Crossref/OpenAlex/Semantic Scholar by title (see [Reference management and
+  export](#reference-management-and-export)) — this only happens when the paper's title genuinely
+  isn't indexed anywhere yet (a very new preprint, an obscure workshop paper) *and* the PDF itself
+  had no usable author/year metadata either. It's re-checked on every render, so it can resolve
+  itself later without you doing anything.
+- **How do I clean up a paper that shows up twice in the library?** Run `scholarmind dedupe` to
+  see duplicate groups (same title, different ID — usually a re-downloaded or regenerated PDF),
+  then `scholarmind dedupe --apply` to remove the extra copy. See
+  [`dedupe`](#dedupe--find-and-remove-duplicate-papers) above.
 - **Can I use OpenAI / a local model instead of OpenRouter?** Yes — set `LLM_BASE_URL`,
   `LLM_MODEL`, and `LLM_API_KEY` to any OpenAI-compatible endpoint.
 - **How do I add another citation style or file format?** See `CONTRIBUTING.md` — the citation

@@ -7,7 +7,12 @@ from scholarmind.retrieval.reranker import Reranker
 from scholarmind.retrieval.sparse import sparse_search
 
 
-def search(query: str, settings: "Settings | None" = None) -> list[DenseResult]:
+def search(
+    query: str,
+    settings: "Settings | None" = None,
+    paper_id: str | None = None,
+    paper_ids: list[str] | None = None,
+) -> list[DenseResult]:
     if settings is None:
         settings = get_settings()
 
@@ -19,6 +24,8 @@ def search(query: str, settings: "Settings | None" = None) -> list[DenseResult]:
         settings.qdrant_path,
         settings.qdrant_collection,
         settings.retrieval_candidate_k,
+        paper_id=paper_id,
+        paper_ids=paper_ids,
     )
 
     sparse_candidates = sparse_search(
@@ -26,6 +33,8 @@ def search(query: str, settings: "Settings | None" = None) -> list[DenseResult]:
         settings.qdrant_path,
         settings.qdrant_collection,
         settings.retrieval_candidate_k,
+        paper_id=paper_id,
+        paper_ids=paper_ids,
     )
 
     if not dense_candidates and not sparse_candidates:

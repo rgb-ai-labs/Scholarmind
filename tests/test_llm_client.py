@@ -56,3 +56,91 @@ def test_openrouter_client_normalizes_none_content_to_empty_string():
     result = client.complete("system", "user")
 
     assert result == ""
+
+
+def test_complete_with_image_sends_image_content_block_and_override_model(tmp_path):
+    client = OpenRouterClient(
+        api_key="test-key",
+        base_url="https://example.invalid/v1",
+        model="text-only-model",
+        max_tokens=16,
+    )
+
+    image_path = tmp_path / "figure.png"
+    image_path.write_bytes(b"\x89PNG\r\n\x1a\nfake png bytes")
+
+    captured = {}
+
+    class _FakeMessage:
+        content = "It shows a bar chart."
+
+    class _FakeChoice:
+        message = _FakeMessage()
+
+    class _FakeResponse:
+        choices = [_FakeChoice()]
+
+    class _FakeCompletions:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return _FakeResponse()
+
+    class _FakeChat:
+        completions = _FakeCompletions()
+
+    class _FakeClient:
+        chat = _FakeChat()
+
+    client._client = _FakeClient()
+
+    result = client.complete_with_image(
+        "system prompt", "what does this show?", str(image_path), "vision-model"
+    )
+
+    assert result == "It shows a bar chart."
+    assert captured["model"] == "vision-model"  # overrides the client's text-only model
+
+    user_message = captured["messages"][1]
+    assert user_message["role"] == "user"
+    content_blocks = user_message["content"]
+    assert content_blocks[0] == {"type": "text", "text": "what does this show?"}
+    assert content_blocks[1]["type"] == "image_url"
+    assert content_blocks[1]["image_url"]["url"].startswith("data:image/png;base64,")
+
+
+def test_complete_with_image_picks_mime_type_from_extension(tmp_path):
+    client = OpenRouterClient(
+        api_key="test-key", base_url="https://example.invalid/v1", model="m", max_tokens=16
+    )
+
+    image_path = tmp_path / "figure.jpg"
+    image_path.write_bytes(b"fake jpeg bytes")
+
+    captured = {}
+
+    class _FakeMessage:
+        content = "ok"
+
+    class _FakeChoice:
+        message = _FakeMessage()
+
+    class _FakeResponse:
+        choices = [_FakeChoice()]
+
+    class _FakeCompletions:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return _FakeResponse()
+
+    class _FakeChat:
+        completions = _FakeCompletions()
+
+    class _FakeClient:
+        chat = _FakeChat()
+
+    client._client = _FakeClient()
+
+    client.complete_with_image("s", "u", str(image_path), "vision-model")
+
+    url = captured["messages"][1]["content"][1]["image_url"]["url"]
+    assert url.startswith("data:image/jpeg;base64,")

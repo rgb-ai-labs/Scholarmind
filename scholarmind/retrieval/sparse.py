@@ -1,7 +1,7 @@
 from qdrant_client import QdrantClient
 from rank_bm25 import BM25Okapi
 
-from scholarmind.retrieval.dense import DenseResult
+from scholarmind.retrieval.dense import DenseResult, paper_scope_filter
 
 
 def sparse_search(
@@ -9,17 +9,22 @@ def sparse_search(
     qdrant_path: str,
     collection_name: str,
     limit: int,
+    paper_id: str | None = None,
+    paper_ids: list[str] | None = None,
 ) -> list[DenseResult]:
     client = QdrantClient(path=qdrant_path)
     try:
         if not client.collection_exists(collection_name):
             return []
 
+        scroll_filter = paper_scope_filter(paper_id, paper_ids)
+
         points = []
         offset = None
         while True:
             batch, next_offset = client.scroll(
                 collection_name=collection_name,
+                scroll_filter=scroll_filter,
                 with_payload=True,
                 limit=256,
                 offset=offset,

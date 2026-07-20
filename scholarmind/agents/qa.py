@@ -28,10 +28,11 @@ def answer_question(
     question: str,
     llm_client: "LLMClient",
     settings: "Settings | None" = None,
+    paper_id: str | None = None,
 ) -> AnswerResult:
     settings = settings or get_settings()
 
-    sources = search(question, settings)
+    sources = search(question, settings, paper_id=paper_id)
 
     if not sources:
         return AnswerResult(question=question, answer=None, sources_found=0)

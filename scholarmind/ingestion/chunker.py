@@ -17,6 +17,12 @@ class Chunk:
     page_end: int
     chunk_index: int  # 0-based, increasing across the whole document
     text: str
+    source_filename: str | None = None  # fallback label when title metadata is missing
+    ingested_at: float | None = None  # unix timestamp, shared by all chunks of one ingestion
+    doi: str | None = None
+    is_metadata_only: bool = False  # True for discovery records ingested without a PDF
+    chunk_type: str = "text"  # "text" | "table" | "equation" | "figure"
+    image_path: str | None = None  # populated only for chunk_type == "figure"
 
 
 def _split_words(paragraph: str, chunk_size: int) -> list[str]:
@@ -77,6 +83,7 @@ def chunk_document(
     doc: "ParsedDocument",
     chunk_size: int,
     chunk_overlap: int,
+    ingested_at: float | None = None,
 ) -> list[Chunk]:
     chunks: list[Chunk] = []
     chunk_index = 0
@@ -102,8 +109,73 @@ def chunk_document(
                     page_end=section.page_end,
                     chunk_index=chunk_index,
                     text=text,
+                    source_filename=doc.source_filename,
+                    ingested_at=ingested_at,
+                    doi=doc.doi,
+                    is_metadata_only=doc.is_metadata_only,
                 )
             )
             chunk_index += 1
+
+    def _common_fields() -> dict:
+        return dict(
+            paper_id=doc.paper_id,
+            title=doc.title,
+            authors=doc.authors,
+            year=doc.year,
+            venue=doc.venue,
+            source_filename=doc.source_filename,
+            ingested_at=ingested_at,
+            doi=doc.doi,
+            is_metadata_only=doc.is_metadata_only,
+        )
+
+    for table in doc.tables:
+        caption_part = f": {table.caption}" if table.caption else ""
+        chunks.append(
+            Chunk(
+                **_common_fields(),
+                section=table.caption or f"Table (page {table.page})",
+                page_start=table.page,
+                page_end=table.page,
+                chunk_index=chunk_index,
+                text=f"Table (page {table.page}){caption_part}\n\n{table.markdown}",
+                chunk_type="table",
+            )
+        )
+        chunk_index += 1
+
+    for equation in doc.equations:
+        equation_text = (
+            f"Equation (page {equation.page}): {equation.text}\nContext: {equation.context}"
+        )
+        chunks.append(
+            Chunk(
+                **_common_fields(),
+                section=f"Equation (page {equation.page})",
+                page_start=equation.page,
+                page_end=equation.page,
+                chunk_index=chunk_index,
+                text=equation_text,
+                chunk_type="equation",
+            )
+        )
+        chunk_index += 1
+
+    for figure in doc.figures:
+        caption_text = figure.caption or "(no caption detected)"
+        chunks.append(
+            Chunk(
+                **_common_fields(),
+                section=figure.caption or f"Figure (page {figure.page})",
+                page_start=figure.page,
+                page_end=figure.page,
+                chunk_index=chunk_index,
+                text=f"Figure (page {figure.page}): {caption_text}",
+                chunk_type="figure",
+                image_path=figure.image_path,
+            )
+        )
+        chunk_index += 1
 
     return chunks

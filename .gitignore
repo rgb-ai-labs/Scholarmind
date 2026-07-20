@@ -27,7 +27,12 @@ data/
 .coverage
 htmlcov/
 
-# Editors / OS
+# Editors / OS / agent tooling
 .vscode/
 .idea/
 .DS_Store
+Thumbs.db
+.claude/
+
+# Internal build-plan audit — not for the public repo
+docs/AUDIT.md

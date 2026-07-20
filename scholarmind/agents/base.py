@@ -20,11 +20,12 @@ def grounded_generate(
     task_instruction: str,
     llm_client: "LLMClient",
     settings: "Settings | None" = None,
+    paper_ids: list[str] | None = None,
 ) -> AgentResult:
     if settings is None:
         settings = get_settings()
 
-    sources = search(query, settings)
+    sources = search(query, settings, paper_ids=paper_ids)
     if not sources:
         return AgentResult(text="", sources=[], sources_found=0)
 
