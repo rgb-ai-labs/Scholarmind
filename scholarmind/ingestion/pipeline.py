@@ -5,10 +5,10 @@ from typing import TYPE_CHECKING
 
 from scholarmind.config import get_settings
 from scholarmind.ingestion.chunker import chunk_document
-from scholarmind.ingestion.embedder import Embedder
 from scholarmind.ingestion.loader import load_path
 from scholarmind.ingestion.parser import ParsedDocument, ParsedSection, parse_document
 from scholarmind.ingestion.store import ChunkStore
+from scholarmind.model_cache import get_embedder
 from scholarmind.retrieval.papers import list_papers, normalize_title
 
 if TYPE_CHECKING:
@@ -48,7 +48,7 @@ def run_ingestion(path: Path, settings: "Settings | None" = None) -> IngestResul
         if key is not None:
             existing_paper_ids_by_title.setdefault(key, set()).add(paper.paper_id)
 
-    embedder = Embedder(settings.embedding_model)
+    embedder = get_embedder(settings.embedding_model)
     store = ChunkStore(
         qdrant_path=settings.qdrant_path,
         collection_name=settings.qdrant_collection,
@@ -119,7 +119,7 @@ def ingest_metadata_record(
         is_metadata_only=True,
     )
 
-    embedder = Embedder(settings.embedding_model)
+    embedder = get_embedder(settings.embedding_model)
     store = ChunkStore(
         qdrant_path=settings.qdrant_path,
         collection_name=settings.qdrant_collection,

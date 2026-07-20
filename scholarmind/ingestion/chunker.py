@@ -23,6 +23,17 @@ class Chunk:
     is_metadata_only: bool = False  # True for discovery records ingested without a PDF
     chunk_type: str = "text"  # "text" | "table" | "equation" | "figure"
     image_path: str | None = None  # populated only for chunk_type == "figure"
+    # Crossref/OpenAlex/Semantic Scholar resolution, persisted once it succeeds (see
+    # citations/export.py::paper_to_metadata) so later renders skip the network round-trip and
+    # work offline. resolved_source is the presence signal: None means "never successfully
+    # resolved yet, keep trying live" — a failed attempt is deliberately never persisted here,
+    # so it keeps self-healing on every render instead of being stuck the way citations/
+    # metadata.py's in-memory _CACHE explicitly avoids for the same reason.
+    resolved_doi: str | None = None
+    resolved_authors: list[str] | None = None
+    resolved_year: int | None = None
+    resolved_venue: str | None = None
+    resolved_source: str | None = None
 
 
 def _split_words(paragraph: str, chunk_size: int) -> list[str]:

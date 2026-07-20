@@ -13,13 +13,21 @@ def test_webapp_app_exposes_render_functions():
 
 
 def test_webapp_app_exposes_agent_panel_functions():
-    assert callable(webapp_app.render_agent_workspace)
     assert callable(webapp_app.render_summarize_panel)
     assert callable(webapp_app.render_gaps_panel)
     assert callable(webapp_app.render_methodology_panel)
     assert callable(webapp_app.render_writing_panel)
     assert callable(webapp_app.render_discover_panel)
     assert callable(webapp_app.render_citations_panel)
+
+
+def test_webapp_app_exposes_navigation_page_functions():
+    # The app is a st.navigation multi-page app; every page is a zero-arg callable.
+    assert callable(webapp_app._ask_page)
+    assert callable(webapp_app._library_page)
+    assert callable(webapp_app._analyze_page)
+    assert callable(webapp_app._write_page)
+    assert callable(webapp_app._discover_page)
 
 
 def test_webapp_app_exposes_paper_scoping_helpers():

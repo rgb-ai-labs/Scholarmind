@@ -1,0 +1,30 @@
+# ScholarMind web app theme.
+# Professional, light, and fully offline: built-in system fonts only (no Google Fonts
+# CDN), consistent with the app's local-first positioning. Adjust primaryColor to rebrand.
+
+[theme]
+base = "light"
+primaryColor = "#0B6BCB"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F5F7FA"
+codeBackgroundColor = "#F3F4F6"
+textColor = "#1A2027"
+linkColor = "#0B6BCB"
+borderColor = "#E2E6EB"
+showWidgetBorder = true
+showSidebarBorder = true
+baseRadius = "6px"
+buttonRadius = "6px"
+font = "sans-serif"
+codeFont = "monospace"
+baseFontSize = 15
+linkUnderline = false
+greenColor = "#137333"
+redColor = "#C5221F"
+orangeColor = "#B06000"
+grayColor = "#5F6B7A"
+
+[theme.sidebar]
+backgroundColor = "#F5F7FA"
+secondaryBackgroundColor = "#ECEFF3"
+borderColor = "#E2E6EB"

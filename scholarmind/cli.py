@@ -1,3 +1,4 @@
+import sys
 import tempfile
 from pathlib import Path
 
@@ -13,6 +14,18 @@ from scholarmind.ingestion.pipeline import IngestResult, run_ingestion
 from scholarmind.orchestrator import run as orchestrator_run
 
 app = typer.Typer(help="ScholarMind: a multi-agent RAG research assistant for PhD students.")
+
+# Paper titles/authors routinely contain non-ASCII characters (accents, Ł, em dashes, …), but
+# Windows terminals — and any redirected/piped output — often default stdout/stderr to a narrow
+# codepage (cp1252) that can't encode them, crashing with UnicodeEncodeError mid-answer. Force
+# UTF-8 with a safe fallback so real paper metadata never crashes the CLI. Guarded because a
+# test-harness-swapped stream may not support .reconfigure().
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
 
 def _print_ingest_result(result: "IngestResult") -> None:
@@ -36,10 +49,16 @@ def _print_answer_result(result: "AnswerResult", question: str) -> None:
     typer.echo("")
     typer.echo("Sources:")
     for citation in result.answer.citations:
-        authors = ", ".join(citation.authors)
+        # Mirrors the web app's Sources rendering (webapp/app.py::_render_citations): a chunk's
+        # own metadata is frequently incomplete (e.g. a PDF with no /Author or non-4-digit
+        # /Subject), so this must degrade gracefully rather than print the literal "None".
+        title = citation.title or "Untitled"
+        authors = ", ".join(citation.authors) if citation.authors else "Unknown author"
+        year = citation.year if citation.year is not None else "n.d."
+        section = f", {citation.section}" if citation.section else ""
         typer.echo(
-            f"[{citation.index}] {citation.title} — {authors} ({citation.year}), "
-            f"{citation.section}, pp. {citation.page_start}-{citation.page_end}"
+            f"[{citation.index}] {title} — {authors} ({year}){section}, "
+            f"pp. {citation.page_start}-{citation.page_end}"
         )
 
     if result.answer.invalid_citation_markers:

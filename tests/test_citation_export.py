@@ -5,6 +5,7 @@ from scholarmind.citations import export as export_module
 from scholarmind.citations import metadata as metadata_module
 from scholarmind.citations.export import export_bibtex, paper_to_metadata
 from scholarmind.citations.metadata import NormalizedMetadata, normalize_metadata
+from scholarmind.config import Settings
 from scholarmind.retrieval.papers import PaperSummary
 
 
@@ -49,7 +50,7 @@ def test_paper_to_metadata_maps_fields():
     assert metadata.source == "unresolved"
 
 
-def test_paper_to_metadata_prefers_resolved_metadata_over_library_fields(monkeypatch):
+def test_paper_to_metadata_prefers_resolved_metadata_over_library_fields(monkeypatch, tmp_path):
     def _resolved(title, authors, year):
         return NormalizedMetadata(
             doi="10.9999/resolved",
@@ -62,7 +63,11 @@ def test_paper_to_metadata_prefers_resolved_metadata_over_library_fields(monkeyp
 
     monkeypatch.setattr(export_module, "normalize_metadata", _resolved)
 
-    metadata = paper_to_metadata(_paper(doi=None, authors=[], year=None, venue=None))
+    # A successful resolution now gets persisted (persist_resolved_metadata) — isolate the
+    # store so this test can never touch the real ./data/qdrant.
+    settings = Settings(qdrant_path=str(tmp_path / "qdrant"), qdrant_collection="test_export_chunks")
+
+    metadata = paper_to_metadata(_paper(doi=None, authors=[], year=None, venue=None), settings)
 
     assert metadata.source == "crossref"
     assert metadata.doi == "10.9999/resolved"
@@ -82,7 +87,7 @@ def test_paper_to_metadata_falls_back_to_library_doi_and_venue_when_unresolved()
     assert metadata.venue == "NeurIPS"
 
 
-def test_paper_to_metadata_self_heals_after_an_earlier_failed_lookup(monkeypatch):
+def test_paper_to_metadata_self_heals_after_an_earlier_failed_lookup(monkeypatch, tmp_path):
     # Regression test for the exact production bug: a paper ingested with no usable PDF-embedded
     # metadata (empty authors, no year — e.g. an ACM/LaTeX-built PDF with no /Author field) whose
     # very first live lookup attempt fails everywhere (Crossref not-yet-indexed, OpenAlex and
@@ -106,8 +111,11 @@ def test_paper_to_metadata_self_heals_after_an_earlier_failed_lookup(monkeypatch
         doi=None,
         venue=None,
     )
+    # The second render below resolves successfully and now persists — isolate the store so
+    # this test can never touch the real ./data/qdrant.
+    settings = Settings(qdrant_path=str(tmp_path / "qdrant"), qdrant_collection="test_export_chunks")
 
-    first_render = paper_to_metadata(paper)
+    first_render = paper_to_metadata(paper, settings)
     assert first_render.source == "unresolved"
     assert first_render.authors == []
 
@@ -138,7 +146,7 @@ def test_paper_to_metadata_self_heals_after_an_earlier_failed_lookup(monkeypatch
 
     monkeypatch.setattr(metadata_module.httpx, "get", lambda *a, **kw: _CrossrefHit())
 
-    second_render = paper_to_metadata(paper)
+    second_render = paper_to_metadata(paper, settings)
 
     assert second_render.source == "crossref"
     assert second_render.authors == ["Tao Dong"]

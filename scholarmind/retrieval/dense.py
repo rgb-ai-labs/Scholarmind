@@ -25,6 +25,11 @@ class DenseResult:
     is_metadata_only: bool = False
     chunk_type: str = "text"
     image_path: str | None = None
+    resolved_doi: str | None = None
+    resolved_authors: list[str] | None = None
+    resolved_year: int | None = None
+    resolved_venue: str | None = None
+    resolved_source: str | None = None
 
 
 def paper_scope_filter(

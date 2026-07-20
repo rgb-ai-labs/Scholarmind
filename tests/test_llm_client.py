@@ -58,6 +58,53 @@ def test_openrouter_client_normalizes_none_content_to_empty_string():
     assert result == ""
 
 
+def test_stream_yields_content_deltas_and_skips_empty_ones():
+    client = OpenRouterClient(
+        api_key="test-key", base_url="https://example.invalid/v1", model="m", max_tokens=16
+    )
+
+    class _Delta:
+        def __init__(self, content):
+            self.content = content
+
+    class _Choice:
+        def __init__(self, content):
+            self.delta = _Delta(content)
+
+    class _Chunk:
+        def __init__(self, choices):
+            self.choices = choices
+
+    captured = {}
+
+    class _FakeCompletions:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return iter(
+                [
+                    _Chunk([_Choice("Hello")]),
+                    _Chunk([_Choice(" ")]),
+                    _Chunk([]),  # keep-alive chunk with no choices — must be skipped, not crash
+                    _Chunk([_Choice(None)]),  # a None delta — must be skipped
+                    _Chunk([_Choice("world")]),
+                ]
+            )
+
+    class _FakeChat:
+        completions = _FakeCompletions()
+
+    class _FakeClient:
+        chat = _FakeChat()
+
+    client._client = _FakeClient()
+
+    tokens = list(client.stream("system", "user"))
+
+    assert captured["stream"] is True
+    assert tokens == ["Hello", " ", "world"]
+    assert "".join(tokens) == "Hello world"
+
+
 def test_complete_with_image_sends_image_content_block_and_override_model(tmp_path):
     client = OpenRouterClient(
         api_key="test-key",

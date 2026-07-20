@@ -1,9 +1,8 @@
 from scholarmind.config import Settings, get_settings
 from scholarmind.guardrails import passes_confidence
-from scholarmind.ingestion.embedder import Embedder
+from scholarmind.model_cache import get_embedder, get_reranker
 from scholarmind.retrieval.dense import DenseResult, dense_search
 from scholarmind.retrieval.hybrid import hybrid_rank
-from scholarmind.retrieval.reranker import Reranker
 from scholarmind.retrieval.sparse import sparse_search
 
 
@@ -16,7 +15,7 @@ def search(
     if settings is None:
         settings = get_settings()
 
-    embedder = Embedder(settings.embedding_model)
+    embedder = get_embedder(settings.embedding_model)
 
     dense_candidates = dense_search(
         query,
@@ -42,7 +41,7 @@ def search(
 
     hybrid_candidates = hybrid_rank(dense_candidates, sparse_candidates)
 
-    reranker = Reranker(settings.reranker_model)
+    reranker = get_reranker(settings.reranker_model)
 
     scored = reranker.rerank_with_scores(
         query, hybrid_candidates, settings.retrieval_top_k

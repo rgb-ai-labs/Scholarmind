@@ -14,6 +14,7 @@ env/
 
 # Env / secrets
 .env
+.streamlit/secrets.toml
 
 # Data / artifacts
 data/

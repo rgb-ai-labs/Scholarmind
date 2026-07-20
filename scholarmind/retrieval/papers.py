@@ -37,6 +37,13 @@ class PaperSummary:
     authors: list[str] = field(default_factory=list)
     year: int | None = None
     venue: str | None = None
+    # Persisted Crossref/OpenAlex/Semantic Scholar resolution (see citations/export.py::
+    # paper_to_metadata). resolved_source is None until a lookup has actually succeeded once.
+    resolved_doi: str | None = None
+    resolved_authors: list[str] | None = None
+    resolved_year: int | None = None
+    resolved_venue: str | None = None
+    resolved_source: str | None = None
 
 
 def list_papers(settings: "Settings | None" = None) -> list["PaperSummary"]:
@@ -57,6 +64,11 @@ def list_papers(settings: "Settings | None" = None) -> list["PaperSummary"]:
             "authors",
             "year",
             "venue",
+            "resolved_doi",
+            "resolved_authors",
+            "resolved_year",
+            "resolved_venue",
+            "resolved_source",
         ]
 
         papers: dict[str, dict] = {}
@@ -84,6 +96,11 @@ def list_papers(settings: "Settings | None" = None) -> list["PaperSummary"]:
                         "authors": [],
                         "year": None,
                         "venue": None,
+                        "resolved_doi": None,
+                        "resolved_authors": None,
+                        "resolved_year": None,
+                        "resolved_venue": None,
+                        "resolved_source": None,
                     },
                 )
                 entry["chunk_count"] += 1
@@ -99,6 +116,19 @@ def list_papers(settings: "Settings | None" = None) -> list["PaperSummary"]:
                 entry["authors"] = entry["authors"] or payload.get("authors") or []
                 entry["year"] = entry["year"] if entry["year"] is not None else payload.get("year")
                 entry["venue"] = entry["venue"] or payload.get("venue")
+                entry["resolved_source"] = entry["resolved_source"] or payload.get(
+                    "resolved_source"
+                )
+                entry["resolved_doi"] = entry["resolved_doi"] or payload.get("resolved_doi")
+                entry["resolved_authors"] = entry["resolved_authors"] or payload.get(
+                    "resolved_authors"
+                )
+                entry["resolved_year"] = (
+                    entry["resolved_year"]
+                    if entry["resolved_year"] is not None
+                    else payload.get("resolved_year")
+                )
+                entry["resolved_venue"] = entry["resolved_venue"] or payload.get("resolved_venue")
             if next_offset is None:
                 break
             offset = next_offset
@@ -114,6 +144,11 @@ def list_papers(settings: "Settings | None" = None) -> list["PaperSummary"]:
                 authors=data["authors"],
                 year=data["year"],
                 venue=data["venue"],
+                resolved_doi=data["resolved_doi"],
+                resolved_authors=data["resolved_authors"],
+                resolved_year=data["resolved_year"],
+                resolved_venue=data["resolved_venue"],
+                resolved_source=data["resolved_source"],
             )
             for paper_id, data in papers.items()
         ]
@@ -181,6 +216,39 @@ def find_papers_by_identifier(
 
     lowered = ident.lower()
     return [p for p in papers if lowered in p.label.lower()]
+
+
+def persist_resolved_metadata(
+    paper_id: str,
+    doi: str | None,
+    authors: list[str],
+    year: int | None,
+    venue: str | None,
+    source: str,
+    settings: "Settings | None" = None,
+) -> None:
+    # Writes a successful Crossref/OpenAlex/Semantic Scholar resolution onto every chunk of
+    # this paper via a payload-only update (no vectors touched, no re-embedding). Callers must
+    # never pass source="unresolved" here — see the resolved_source field's docstring on
+    # PaperSummary/Chunk for why a failed lookup is deliberately never persisted.
+    settings = settings or get_settings()
+    client = QdrantClient(path=settings.qdrant_path)
+    try:
+        if not client.collection_exists(settings.qdrant_collection):
+            return
+        client.set_payload(
+            collection_name=settings.qdrant_collection,
+            payload={
+                "resolved_doi": doi,
+                "resolved_authors": authors,
+                "resolved_year": year,
+                "resolved_venue": venue,
+                "resolved_source": source,
+            },
+            points=Filter(must=[FieldCondition(key="paper_id", match=MatchValue(value=paper_id))]),
+        )
+    finally:
+        client.close()
 
 
 def delete_papers(paper_ids: list[str], settings: "Settings | None" = None) -> int:

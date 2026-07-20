@@ -1,5 +1,7 @@
 # ScholarMind
 
+[User Guide](USER_GUIDE.md) · [Architecture](ARCHITECTURE.md) · [Contributing](CONTRIBUTING.md) · [License](LICENSE)
+
 **A multi-agent, RAG-powered research assistant for PhD students.** ScholarMind ingests your
 papers into a local vector index and answers research questions with **verified, citation-backed**
 answers — every claim is grounded in a retrieved passage, and a second model pass checks that the
@@ -13,8 +15,8 @@ cited passage actually supports the claim.
 > is the final LLM step (any OpenAI-compatible API), plus optional public metadata lookups. Nothing
 > to provision, no infrastructure to stand up — just `uv sync` and go.
 
-<!-- ![ScholarMind architecture](docs/architecture.png) -->
-<!-- TODO: add an architecture diagram image at docs/architecture.png and uncomment the line above. -->
+<!-- ![ScholarMind architecture](architecture.png) -->
+<!-- TODO: add an architecture diagram image at the repo root and uncomment the line above. -->
 
 ## Why
 
@@ -56,7 +58,10 @@ Four layers (see [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full design):
 - **Citation & verification** — metadata normalization via Crossref, falling back to OpenAlex
   then Semantic Scholar when Crossref has nothing (with a title-similarity check before trusting
   a fallback match), APA/MLA/Chicago/IEEE/Vancouver/BibTeX formatting (pluggable style registry),
-  and a per-claim verifier that flags any citation whose passage doesn't support the claim.
+  and a per-claim verifier that flags any citation whose passage doesn't support the claim. A
+  successful resolution is persisted into the library (a payload-only update, no re-embedding) so
+  it's instant and works offline afterward; a failed one is never persisted, so it keeps
+  retrying on later renders instead of getting stuck.
 - **Reference management & export** — bulk BibTeX export (whole library or selected papers,
   collision-safe keys), a Zotero push (`scholarmind/citations/zotero.py`), and a LaTeX/Overleaf
   export for Writing-agent drafts ([N] markers → `\cite{}`, plus a matching .bib).
@@ -81,21 +86,26 @@ Four layers (see [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full design):
 - **Eval harness** — precision@k / recall@k / citation-faithfulness scoring over a labelled set
   (`scholarmind eval`), with centralized guardrails (confidence threshold, cite-only-ingested).
 
-**310 tests** — 205 run fully offline with no API key (fast CI gate); the remaining 105 download
+**326 tests** — 207 run fully offline with no API key (fast CI gate); the remaining 119 download
 models or exercise live LLM/network paths.
 
 ## Quickstart
 
+Works the same way on **macOS (incl. Apple Silicon), Linux, and Windows** — pure Python, no
+platform-specific setup. (macOS: `brew install uv` or the curl installer below both work.)
+
 ```bash
-# 1. Install dependencies (uv; falls back to pip)
+# 1. Install dependencies (uv; falls back to pip). No uv yet?
+#    macOS/Linux: curl -LsSf https://astral.sh/uv/install.sh | sh
+#    Windows:     powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 uv sync --extra dev --extra webapp
 
 # 2. Configure — copy the template and add an OpenRouter (or any OpenAI-compatible) key
 cp .env.example .env
 # then edit .env: set LLM_API_KEY=sk-or-...   (a free OpenRouter model is the default)
 
-# 3. Ingest a PDF (or a directory of PDFs)
-uv run scholarmind ingest path/to/paper.pdf
+# 3. Ingest a PDF (or a directory of PDFs) — no PDF handy? use the bundled sample:
+uv run scholarmind ingest tests/fixtures/sample_paper.pdf
 
 # 4. Ask a question, grounded in what you ingested
 uv run scholarmind ask "What does this paper propose for grounding LLM answers?"
@@ -109,33 +119,31 @@ uv run scholarmind serve
 
 Run `uv run scholarmind --help` to see all commands (`ingest`, `dedupe`, `delete`, `ask`, `chat`,
 `serve`, `app`, `eval`).
-See the [User Guide](docs/USER_GUIDE.md) for the full command/config reference and a walkthrough.
+See the [User Guide](USER_GUIDE.md) for the full command/config reference, macOS/Linux/Windows
+install details, and a walkthrough.
 
 ### Web app
 
 Prefer a browser to the CLI? `uv run scholarmind app` launches a Streamlit UI at
-`http://localhost:8501` — upload PDFs, watch them get ingested, and ask questions in a chat
-interface with sources, formatted references, and flagged/unsupported claims shown inline. It's
-a thin UI layer over the same engine functions the CLI and API use — no separate logic.
+`http://localhost:8501` — a clean, themed, **multi-page** app (top navigation, shared sidebar)
+over the same engine functions the CLI and API use — no separate logic. Ask questions in a chat
+interface with a prominent green/red **verification badge**, sources, formatted references, and
+flagged/unsupported claims shown inline.
 
 > Embedded Qdrant is single-process: don't run the web app and `scholarmind serve` against the
 > same `QDRANT_PATH` at the same time.
 
-#### Agents in the web app
+#### The pages
 
-Below Ask, an **Agents** tab strip exposes the five domain agents, plus a citation/verify
-utility:
+Five pages across the top nav, each focused on one intent:
 
-| Tab | What it does | Input |
-|---|---|---|
-| Summarize | Pick a paper from the dropdown to summarize **that paper only** (all its chunks, in reading order, structured as Overview/Methods/Findings/Limitations), or switch to "Across whole library (by topic)" for the old free-text mode | dropdown, or a topic like `reinforcement learning from human feedback` |
-| Gap analysis | Synthesizes across your whole library for themes, contradictions, open questions | free text, e.g. `reinforcement learning from human feedback` |
-| Methodology | Free-text advice on study design/stats | free text |
-| Writing | Section-type picker (Related Work/Introduction/Discussion/Abstract), multi-paper scope, optional voice notes; never returns an uncited sentence; a "Check novelty" action on the result | topic/focus text; picker + multi-select for the rest |
-| Discover | Three sub-tabs: **My library** (browses already-ingested papers, no network), **Literature search** (arXiv + Semantic Scholar + OpenAlex, with an ingest action), **Citation graph** (1-hop references/citing papers via Semantic Scholar, with an ingest action) | topic text, or a DOI/S2 paper ID for the citation graph |
-| Citation / verify | Runs citation verification + APA/BibTeX formatting on any pasted `[N]`-marked draft and its source list | paste draft text and a numbered source list |
-| References & export | Pick a style (APA/MLA/Chicago/IEEE/Vancouver), export selected-or-all papers as `.bib`, push to Zotero, or export the latest Writing draft as a zipped LaTeX bundle (`draft.tex` + `references.bib`) | checkboxes to select papers; Zotero key/library ID live in the sidebar |
-| Figures & tables | Browse one paper's extracted tables (rendered), equations, and figures (thumbnailed); ask a question about a specific figure (image sent to `VISION_MODEL` if configured, else caption-only) | pick a paper; free-text question per figure |
+| Page | What's on it |
+|---|---|
+| **Ask** | Chat, scoped to all papers or one. The answer **streams in token-by-token**, then a prominent verification badge and expandable Sources / Verification details / References appear once each cited claim has been checked. |
+| **Library** | Upload & ingest, a two-step per-paper delete, and Figures & tables browsing (extracted tables/equations/figures, with per-figure Q&A that uses `VISION_MODEL` if configured). |
+| **Analyze** | Tabs: **Summarize** (one paper in full, or by topic), **Gap analysis** (themes/contradictions across the library), **Methodology** (study-design/stats advice). |
+| **Write** | Tabs: **Writing** (section-type picker, multi-paper scope, voice notes, never-uncited guarantee, + a novelty check), **References & export** (APA/MLA/Chicago/IEEE/Vancouver, `.bib`, Zotero, LaTeX bundle), **Citation / verify** (verify a pasted `[N]`-marked draft). |
+| **Discover** | Tabs: **My library** (browse ingested papers), **Literature search** (arXiv + Semantic Scholar + OpenAlex, with ingest), **Citation graph** (1-hop references/citing via Semantic Scholar). |
 
 **To summarize one paper, pick it from the dropdown — don't type the filename.** The engine has
 no way to match a filename against paper content; a bare topic/filename search runs
@@ -230,13 +238,19 @@ All phases below are implemented and tested.
     (`scholarmind delete` + a web-app delete panel), and a Crossref → OpenAlex → Semantic Scholar
     metadata fallback chain (with self-healing, non-permanent negative caching) for references the
     PDF's own metadata can't supply
+16. ✅ Performance — a shared, process-wide cache for the embedding/reranker models (loaded once,
+    not on every ingest/search call) and persisted reference-metadata resolution (written back to
+    the library on first success, so later use is instant and works offline)
+17. ✅ Web-app UX overhaul — a multi-page layout (`st.navigation`: Ask / Library / Analyze /
+    Write / Discover) instead of one long scroll, a prominent citation-verification badge,
+    token-by-token streamed answers on the Ask page, a light professional theme
+    (`.streamlit/config.toml`), and friendlier empty states
 
 Future ideas: additional source connectors (HTML, DOI-direct fetch), a Zotero read/import path,
 expanding the citation graph past one hop, a real web-search backend for the novelty check
-(today it optionally checks arXiv/Semantic Scholar/OpenAlex, not the general web), true equation
-OCR/LaTeX recognition (today's equation extraction is a numbered-line + math-symbol heuristic,
-not an ML-based recognizer), and a stricter Crossref match-confidence check (very short/generic
-titles can currently match an unrelated paper — tracked as a follow-up).
+(today it optionally checks arXiv/Semantic Scholar/OpenAlex, not the general web), and true
+equation OCR/LaTeX recognition (today's equation extraction is a numbered-line + math-symbol
+heuristic, not an ML-based recognizer).
 
 ## Contributing
 

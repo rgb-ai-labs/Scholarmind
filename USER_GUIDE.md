@@ -17,9 +17,19 @@ and an OpenAI-compatible LLM API — with no Docker and no cloud vector database
 - An **OpenRouter** (or any OpenAI-compatible) API key for the answer/verification/agent steps.
   Not needed for ingestion or retrieval.
 
+ScholarMind is pure Python with cross-platform dependencies (PyTorch, PyMuPDF, Qdrant, Streamlit
+all ship macOS/Linux/Windows wheels) and an embedded, serverless vector store — there's nothing
+platform-specific to install. It runs the same way on **macOS (including Apple Silicon), Linux,
+and Windows**.
+
 ## Install
 
+### macOS / Linux
+
 ```bash
+# Install uv if you don't have it (skip if `uv --version` already works)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
 git clone <your-fork-url> scholarmind
 cd scholarmind
 
@@ -28,14 +38,35 @@ uv sync --extra dev --extra webapp    # runtime + dev deps + the Streamlit web a
 cp .env.example .env                   # then edit .env and set LLM_API_KEY (see below)
 ```
 
-(Omit `--extra webapp` if you only want the CLI/API and not the browser UI.)
+On macOS you can also install uv with Homebrew: `brew install uv`. Apple Silicon (M-series) and
+Intel Macs both work — `uv sync` picks the correct wheels automatically; there's no Rosetta step
+and nothing to compile.
+
+### Windows
+
+```powershell
+# Install uv if you don't have it (skip if `uv --version` already works)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+git clone <your-fork-url> scholarmind
+cd scholarmind
+
+uv sync --extra dev --extra webapp
+copy .env.example .env
+```
+
+(Omit `--extra webapp` on either platform if you only want the CLI/API and not the browser UI.)
 
 Verify the install with the fast, offline test suite (no key, no model download needed):
 
 ```bash
-uv run pytest -m "not slow and not llm" -q     # ~205 tests, ~20s
+uv run pytest -m "not slow and not llm" -q     # ~207 tests, ~20s
 uv run scholarmind --help                       # lists all commands
 ```
+
+**Don't have a PDF handy?** The repo ships a small sample paper for exactly this — try the
+[walkthrough](#full-walkthrough) below with `tests/fixtures/sample_paper.pdf` before hunting
+down a real one.
 
 ---
 
@@ -356,25 +387,30 @@ uv sync --extra dev --extra webapp   # once, to install Streamlit
 uv run scholarmind app                # -> opens http://localhost:8501
 ```
 
-1. **Sidebar** — shows your current config (LLM model, embedding model, Qdrant path) and how
-   many papers/chunks are indexed. If `LLM_API_KEY` isn't set, paste one here for the session
-   (it's used only in memory, never written to `.env`).
-2. **Upload & ingest** — drag PDFs into the uploader, click **Ingest uploaded papers**. Each
-   file gets a success/error line (papers + chunks ingested), never a raw traceback. The
-   library counter in the sidebar updates automatically.
-3. **Your library — manage & delete** — an expander under the uploader lists every ingested
-   paper with a **Delete** button. Deleting is a deliberate two-step action: the first click
-   *arms* the delete and surfaces a confirmation ("Delete X? …"), and only **Confirm delete**
-   actually removes it — so nothing is one click from deletion. It removes the paper's chunks
-   from the search index (its PDF in the uploads folder is kept, so it's re-ingestable); the
-   sidebar count updates and a toast confirms. This is the browser equivalent of the
-   [`delete`](#delete--remove-one-ingested-paper) CLI command.
-4. **Ask** — pick a **Scope** (default "All papers", or one specific ingested paper) and type a
-   question in the chat box at the bottom. The answer renders with its inline `[N]` markers, an
-   expandable **Sources** panel (title/authors/year/page per marker), and an expandable
-   **Verification** panel showing which claims were confirmed against their source and which
-   were flagged as unsupported (with the reason). If retrieval finds nothing, you get a friendly
-   "No relevant sources found" box, not an error.
+The app is organized as **five pages** across a top navigation bar, with a shared sidebar. Pick
+a page from the top nav; the sidebar (config + library stats + Zotero) stays visible everywhere.
+
+- **Sidebar** — the app name/brand, your current config (LLM model, embedding model, Qdrant
+  path), how many papers/chunks are indexed, and Zotero settings. If `LLM_API_KEY` isn't set,
+  paste one here for the session (used only in memory, never written to `.env`).
+- **Ask** (default page) — pick a **Scope** (default "All papers", or one specific ingested
+  paper) and type a question in the chat box. After a brief "Searching your library…" while
+  retrieval runs, the answer **streams in token-by-token** (with its inline `[N]` markers);
+  then each cited claim is checked and a prominent **verification badge** appears (green "all N
+  claims verified" or red "M unsupported"), alongside an expandable **Sources** panel,
+  **Verification details**, and **References (APA/BibTeX)**. If retrieval finds nothing, you get
+  a friendly "No relevant sources found" box, not an error.
+- **Library** — everything about the papers you already have: **Upload & ingest** (drag PDFs,
+  click ingest; each file gets a success/error line, never a raw traceback), a **manage & delete**
+  expander (per-paper **Delete** with a deliberate two-step confirm — the first click arms it,
+  only **Confirm delete** removes it; the PDF in the uploads folder is kept, so it's
+  re-ingestable), and **Figures & tables** browsing.
+- **Analyze** — reading/understanding tools as tabs: **Summarize**, **Gap analysis**,
+  **Methodology**.
+- **Write** — producing cited output as tabs: **Writing** (+ novelty check), **References &
+  export**, **Citation / verify**.
+- **Discover** — finding new papers as tabs: **My library** (browse ingested papers by topic),
+  **Literature search** (arXiv/Semantic Scholar/OpenAlex), **Citation graph**.
 
 The web app is a thin UI over `run_ingestion`, `answer_question`, and `format_and_verify` — the
 exact same functions the CLI calls, reading and writing the exact same `QDRANT_PATH`, so
@@ -383,10 +419,10 @@ whatever you ingest via `scholarmind ingest` shows up here and vice versa.
 > Embedded Qdrant is single-process — don't run the web app and `scholarmind serve` against the
 > same `QDRANT_PATH` at the same time.
 
-### Agents in the web app
+### The agent tools (Analyze / Write / Discover pages)
 
-Below **Ask**, an **Agents** section holds a tab per domain agent plus a citation utility. All
-of these call the exact functions `chat`/`scholarmind/agents/` use — there's no separate UI
+The agent tools live on the **Analyze**, **Write**, and **Discover** pages (as tabs within each).
+All of them call the exact functions `chat`/`scholarmind/agents/` use — there's no separate UI
 logic.
 
 - **Summarize** (`summarize` / `summarize_paper`) — pick a paper from the dropdown to summarize
@@ -416,7 +452,7 @@ logic.
   [Reference management and export](#reference-management-and-export) below: pick a citation
   style, export a `.bib` file, push references to Zotero, or export a Writing-agent draft as a
   LaTeX/Overleaf bundle.
-- **Figures & tables** — see
+- **Figures & tables** (on the **Library** page, not an agent tool) — see
   [Multimodal content](#multimodal-content-tables-equations-and-figures) below: browse one
   paper's extracted tables (rendered), equations, and figures (with thumbnails), and ask a
   question about a specific figure.
@@ -528,18 +564,23 @@ Zotero push, and a LaTeX/Overleaf export for a Writing-agent draft. Nothing here
 citation logic — it all goes through `citations/formatter.py`'s existing pluggable style
 registry (`format_reference(metadata, style)`), extended with four more styles.
 
-**Metadata resolution (Crossref → OpenAlex → Semantic Scholar):** every reference shown here is
-resolved *live*, on every render — not just from whatever the PDF itself had embedded (many
+**Metadata resolution (Crossref → OpenAlex → Semantic Scholar):** the first time a reference is
+shown here, it's resolved *live* — not just from whatever the PDF itself had embedded (many
 LaTeX-built PDFs, e.g. ACM/IEEE templates, embed a `/Title` but no `/Author` at all).
 `citations/metadata.py::normalize_metadata` first queries Crossref by title; if that fails or
 scores too low, it falls back to OpenAlex, then Semantic Scholar (the same clients literature
-discovery uses), each checked against a title-similarity sanity check before being trusted. Only
-a *successful* resolution is cached for the rest of the session — a failed lookup (a paper not
-yet indexed anywhere, or a transient network hiccup) is retried on the next render rather than
-being stuck forever, so a paper that fails to resolve once will self-heal on its own once the
-data becomes available, with no re-ingestion or restart needed. If every source genuinely has
-nothing, you still get the paper's own title (and any author/year the PDF itself had) rather
-than a hard "Unknown Author (n.d.)" wherever the PDF provided something usable.
+discovery uses), each checked against a title-similarity sanity check before being trusted.
+- **A *successful* resolution is written back into the library** (`retrieval/papers.py::
+  persist_resolved_metadata` — a payload-only update, no re-embedding), so every later render of
+  that paper's reference is instant and needs no network call at all, including with no internet
+  connection.
+- **A failed lookup is never persisted** — a paper not yet indexed anywhere, or hit during a
+  transient network hiccup, is retried live on every render rather than being stuck forever, so
+  it self-heals on its own once the data becomes available, with no re-ingestion or restart
+  needed.
+- If every source genuinely has nothing, you still get the paper's own title (and any
+  author/year the PDF itself had) rather than a hard "Unknown Author (n.d.)" wherever the PDF
+  provided something usable.
 
 - **Citation styles** — `APA` and `BibTeX` already existed; this adds **MLA**, **Chicago**
   (author-date), **IEEE**, and **Vancouver**, all in the same `_FORMATTERS` registry. Pick a
@@ -656,13 +697,14 @@ Set `VISION_MODEL=` (empty) to always use caption-only Figure Q&A.
 - **Does my data leave my machine?** Only the LLM calls (your question + retrieved passages) go
   to the configured LLM provider. Ingestion, embedding, and retrieval are fully local. Reference
   metadata resolution queries Crossref, then OpenAlex, then Semantic Scholar (all public APIs) by
-  paper title.
-- **Why does a reference show "Unknown Author (n.d.)"?** Every reference is resolved live against
-  Crossref/OpenAlex/Semantic Scholar by title (see [Reference management and
+  paper title — once per paper; a successful result is saved into your local library so later use
+  needs no network call, including fully offline.
+- **Why does a reference show "Unknown Author (n.d.)"?** The first time a reference is shown, it's
+  resolved live against Crossref/OpenAlex/Semantic Scholar by title (see [Reference management and
   export](#reference-management-and-export)) — this only happens when the paper's title genuinely
   isn't indexed anywhere yet (a very new preprint, an obscure workshop paper) *and* the PDF itself
-  had no usable author/year metadata either. It's re-checked on every render, so it can resolve
-  itself later without you doing anything.
+  had no usable author/year metadata either. An unresolved lookup is deliberately never saved, so
+  it's retried on every render and can resolve itself later without you doing anything.
 - **How do I clean up a paper that shows up twice in the library?** Run `scholarmind dedupe` to
   see duplicate groups (same title, different ID — usually a re-downloaded or regenerated PDF),
   then `scholarmind dedupe --apply` to remove the extra copy. See
@@ -671,4 +713,4 @@ Set `VISION_MODEL=` (empty) to always use caption-only Figure Q&A.
   `LLM_MODEL`, and `LLM_API_KEY` to any OpenAI-compatible endpoint.
 - **How do I add another citation style or file format?** See `CONTRIBUTING.md` — the citation
   formatter uses a pluggable registry, and the ingestion loader is the place for new formats.
-- **Where's the architecture overview?** [`ARCHITECTURE.md`](../ARCHITECTURE.md).
+- **Where's the architecture overview?** [`ARCHITECTURE.md`](ARCHITECTURE.md).

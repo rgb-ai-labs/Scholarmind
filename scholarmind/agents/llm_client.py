@@ -1,4 +1,5 @@
 import base64
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Protocol
 
@@ -32,6 +33,28 @@ class OpenRouterClient:
             max_tokens=self._max_tokens,
         )
         return response.choices[0].message.content or ""
+
+    def stream(self, system_prompt: str, user_prompt: str) -> Iterator[str]:
+        # Yields text deltas as they arrive. Not part of the LLMClient Protocol — it's an opt-in
+        # extension used only by the web app's Ask page (via qa.answer_question_streaming), so
+        # plain FakeLLMClient test doubles elsewhere don't need it. The non-streaming complete()
+        # above is unchanged and remains what the CLI, API, orchestrator, and every agent use.
+        stream = self._client.chat.completions.create(
+            model=self._model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            max_tokens=self._max_tokens,
+            stream=True,
+        )
+        for chunk in stream:
+            choices = getattr(chunk, "choices", None)
+            if not choices:
+                continue
+            content = getattr(choices[0].delta, "content", None)
+            if content:
+                yield content
 
     def complete_with_image(
         self, system_prompt: str, user_prompt: str, image_path: str, model: str

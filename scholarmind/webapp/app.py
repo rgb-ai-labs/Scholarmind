@@ -10,7 +10,11 @@ from scholarmind.agents.gap_analysis import analyze_gaps
 from scholarmind.agents.llm_client import OpenRouterClient
 from scholarmind.agents.methodology import extract_methodology
 from scholarmind.agents.novelty import NoveltyCheckResult, check_novelty
-from scholarmind.agents.qa import AnswerResult, answer_question
+from scholarmind.agents.qa import (
+    AnswerResult,
+    answer_question_streaming,
+    finalize_streamed_answer,
+)
 from scholarmind.agents.summarization import summarize
 from scholarmind.agents.writing import SECTION_TYPES, draft_section
 from scholarmind.citations.export import export_bibtex, paper_to_metadata
@@ -78,6 +82,12 @@ def _format_llm_error(exc: Exception, settings: "Settings") -> str:
 
 def render_sidebar(settings: "Settings") -> None:
     with st.sidebar:
+        # Brand — with top navigation the app name isn't shown anywhere else, so it
+        # lives here, persistent across every page.
+        st.title(":material/school: ScholarMind")
+        st.caption("Local, citation-verified research assistant")
+        st.divider()
+
         st.header("Settings")
         st.text(f"LLM model: {settings.llm_model}")
         st.text(f"Embedding model: {settings.embedding_model}")
@@ -278,14 +288,42 @@ def render_sources(answer_result: "AnswerResult") -> None:
     _render_citations(verified.citations, verified.invalid_citation_markers)
 
 
+def _render_verification_badge(formatted: "FormattedAndVerifiedAnswer") -> None:
+    # Citation-verification is ScholarMind's whole point, so its result gets a prominent,
+    # colour-coded badge instead of being buried in a collapsed expander title. Every cited
+    # claim was re-checked against its own source passage (see citations/verifier.py).
+    report = formatted.verification_report
+    if not report.verifications:
+        return
+
+    total = len(report.verifications)
+    supported = total - report.unsupported_count
+    if report.unsupported_count == 0:
+        st.badge(
+            f"All {total} claim(s) verified against their sources",
+            icon=":material/verified:",
+            color="green",
+        )
+    else:
+        with st.container(horizontal=True):
+            st.badge(
+                f"{report.unsupported_count} of {total} claim(s) unsupported",
+                icon=":material/warning:",
+                color="red",
+            )
+            st.badge(f"{supported}/{total} verified", color="gray")
+
+
 def render_verification(formatted: "FormattedAndVerifiedAnswer") -> None:
     report = formatted.verification_report
     if not report.verifications:
         return
 
+    _render_verification_badge(formatted)
+
     supported = len(report.verifications) - report.unsupported_count
     with st.expander(
-        f"Verification ({supported}/{len(report.verifications)} claims supported)",
+        f"Verification details ({supported}/{len(report.verifications)} claims supported)",
         expanded=report.unsupported_count > 0,
     ):
         for verification in report.verifications:
@@ -321,17 +359,47 @@ def render_answer(
         render_verification(formatted)
 
 
-def _answer_and_verify(
-    question: str, settings: "Settings", paper_id: str | None = None
+def _stream_answer(
+    question: str, settings: "Settings", paper_id: str | None
 ) -> tuple["AnswerResult | None", "FormattedAndVerifiedAnswer | None"]:
+    # Streams the answer token-by-token into the current chat bubble, then verifies. Must be
+    # called inside a `with st.chat_message("assistant"):` block. The tokens are the answer's
+    # live feedback; a spinner covers the (quieter) retrieval and verification phases around it.
+    # Returns (answer_result, formatted) for the caller to persist in chat history — on a later
+    # rerun those replay through render_answer(), which re-renders the identical finished text.
     client = _load_llm_client(
         settings.llm_api_key, settings.llm_base_url, settings.llm_model, settings.llm_max_tokens
     )
-    answer_result = answer_question(question, client, settings, paper_id=paper_id)
+    try:
+        with st.spinner(
+            "Searching your library… (the first question also loads the retrieval models, "
+            "which can take a minute)"
+        ):
+            streaming = answer_question_streaming(question, client, settings, paper_id=paper_id)
 
-    formatted = None
-    if answer_result.answer is not None:
-        formatted = format_and_verify(answer_result.answer, client)
+        if streaming is None:
+            answer_result = AnswerResult(question=question, answer=None, sources_found=0)
+            render_answer(answer_result, None)  # shows the "no relevant sources" message
+            return answer_result, None
+
+        full_text = st.write_stream(streaming.tokens)
+
+        with st.spinner("Verifying each cited claim against its source…"):
+            answer_result = finalize_streamed_answer(question, full_text, streaming.sources)
+            formatted = (
+                format_and_verify(answer_result.answer, client)
+                if answer_result.answer is not None
+                else None
+            )
+    except Exception as exc:
+        st.error(_format_llm_error(exc, settings))
+        return None, None
+
+    # The answer text already streamed above — render only the sources, verification badge,
+    # and references here (render_answer would re-print the text).
+    render_sources(answer_result)
+    if formatted is not None:
+        render_verification(formatted)
 
     return answer_result, formatted
 
@@ -359,6 +427,13 @@ def _paper_picker(
 
 def render_chat_panel(settings: "Settings") -> None:
     st.subheader("Ask")
+
+    if not list_papers(settings):
+        st.info(
+            "Your library is empty. Open the **Library** page to upload and ingest a PDF, "
+            "then come back here to ask questions grounded in it.",
+            icon=":material/library_books:",
+        )
 
     scope = _paper_picker(settings, "Scope", "ask_scope_choice", none_option_label="All papers")
     scope_paper_id = scope.paper_id if scope is not None else None
@@ -389,19 +464,7 @@ def render_chat_panel(settings: "Settings") -> None:
             )
             answer_result, formatted = None, None
         else:
-            with st.spinner(
-                "Thinking… (the first question also loads the reranker model, which "
-                "can take a minute)"
-            ):
-                try:
-                    answer_result, formatted = _answer_and_verify(
-                        question, settings, paper_id=scope_paper_id
-                    )
-                except Exception as exc:
-                    st.error(_format_llm_error(exc, settings))
-                    answer_result, formatted = None, None
-                else:
-                    render_answer(answer_result, formatted)
+            answer_result, formatted = _stream_answer(question, settings, scope_paper_id)
 
     st.session_state["messages"].append(
         {"role": "assistant", "answer_result": answer_result, "formatted": formatted}
@@ -1058,7 +1121,7 @@ def render_references_export_panel(settings: "Settings") -> None:
     with st.spinner("Resolving reference metadata (Crossref/OpenAlex/Semantic Scholar)…"):
         for paper in selected_papers:
             try:
-                st.markdown(f"- {format_reference(paper_to_metadata(paper), style)}")
+                st.markdown(f"- {format_reference(paper_to_metadata(paper, settings), style)}")
             except ValueError as exc:
                 st.error(str(exc))
                 return
@@ -1069,7 +1132,7 @@ def render_references_export_panel(settings: "Settings") -> None:
 
     with col1:
         st.markdown("**BibTeX export**")
-        bib_content = export_bibtex(selected_papers)
+        bib_content = export_bibtex(selected_papers, settings)
         st.download_button(
             "Export .bib",
             data=bib_content,
@@ -1086,7 +1149,7 @@ def render_references_export_panel(settings: "Settings") -> None:
             with st.spinner("Pushing to Zotero…"):
                 try:
                     result = push_references(
-                        [paper_to_metadata(p) for p in selected_papers],
+                        [paper_to_metadata(p, settings) for p in selected_papers],
                         api_key=settings.zotero_api_key,
                         library_id=settings.zotero_library_id,
                         library_type=settings.zotero_library_type,
@@ -1224,49 +1287,96 @@ def render_figures_tables_panel(settings: "Settings") -> None:
             st.divider()
 
 
-def render_agent_workspace(settings: "Settings") -> None:
-    st.subheader("Agents")
-    tabs = st.tabs(
-        [
-            "Summarize",
-            "Gap analysis",
-            "Methodology",
-            "Writing",
-            "Discover",
-            "Citation / verify",
-            "References & export",
-            "Figures & tables",
-        ]
+# --- Pages ------------------------------------------------------------------
+# The app is a st.navigation multi-page app: five focused pages instead of one
+# long scroll. Each page is a zero-arg callable (required by st.navigation) that
+# re-derives settings itself, and composes the same render_*_panel functions the
+# app has always used — the pages only regroup them by user intent.
+
+
+def _ask_page() -> None:
+    render_chat_panel(_effective_settings())
+
+
+def _library_page() -> None:
+    # Everything about the papers you already have: add them, manage/delete them,
+    # and browse their extracted tables/equations/figures.
+    settings = _effective_settings()
+    render_ingest_panel(settings)
+    render_library_panel(settings)
+    st.divider()
+    render_figures_tables_panel(settings)
+
+
+def _analyze_page() -> None:
+    # Read and understand your library: summaries, cross-paper gaps, methodology Q&A.
+    settings = _effective_settings()
+    summarize_tab, gaps_tab, methods_tab = st.tabs(
+        ["Summarize", "Gap analysis", "Methodology"]
     )
-    with tabs[0]:
+    with summarize_tab:
         render_summarize_panel(settings)
-    with tabs[1]:
+    with gaps_tab:
         render_gaps_panel(settings)
-    with tabs[2]:
+    with methods_tab:
         render_methodology_panel(settings)
-    with tabs[3]:
+
+
+def _write_page() -> None:
+    # Produce cited output: draft sections, format/verify references, export.
+    settings = _effective_settings()
+    writing_tab, references_tab, verify_tab = st.tabs(
+        ["Writing", "References & export", "Citation / verify"]
+    )
+    with writing_tab:
         render_writing_panel(settings)
-    with tabs[4]:
-        render_discover_panel(settings)
-    with tabs[5]:
-        render_citations_panel(settings)
-    with tabs[6]:
+    with references_tab:
         render_references_export_panel(settings)
-    with tabs[7]:
-        render_figures_tables_panel(settings)
+    with verify_tab:
+        render_citations_panel(settings)
+
+
+def _discover_page() -> None:
+    # Find new papers (browse your library, external literature search, citation graph).
+    render_discover_panel(_effective_settings())
 
 
 def main() -> None:
-    st.set_page_config(page_title="ScholarMind", layout="wide")
-    st.title("ScholarMind")
-    st.caption("A local, citation-verified research assistant for your PDF library.")
+    st.set_page_config(
+        page_title="ScholarMind", page_icon=":material/school:", layout="wide"
+    )
 
     settings = _effective_settings()
     render_sidebar(settings)
-    render_ingest_panel(settings)
-    render_library_panel(settings)
-    render_chat_panel(settings)
-    render_agent_workspace(settings)
+
+    page = st.navigation(
+        [
+            st.Page(_ask_page, title="Ask", icon=":material/forum:", default=True),
+            st.Page(
+                _library_page,
+                title="Library",
+                icon=":material/library_books:",
+                url_path="library",
+            ),
+            st.Page(
+                _analyze_page,
+                title="Analyze",
+                icon=":material/analytics:",
+                url_path="analyze",
+            ),
+            st.Page(
+                _write_page, title="Write", icon=":material/edit_note:", url_path="write"
+            ),
+            st.Page(
+                _discover_page,
+                title="Discover",
+                icon=":material/travel_explore:",
+                url_path="discover",
+            ),
+        ],
+        position="top",
+    )
+    page.run()
 
 
 if __name__ == "__main__":
