@@ -2,7 +2,7 @@
 
 [User Guide](USER_GUIDE.md) · [Architecture](ARCHITECTURE.md) · [Contributing](CONTRIBUTING.md) · [License](LICENSE)
 
-**A multi-agent, RAG-powered research assistant for PhD students.** ScholarMind ingests your
+**A multi-agent, RAG-powered research assistant for PhD students, scientists & researchers.** ScholarMind ingests your
 papers into a local vector index and answers research questions with **verified, citation-backed**
 answers — every claim is grounded in a retrieved passage, and a second model pass checks that the
 cited passage actually supports the claim.
