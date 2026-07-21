@@ -39,10 +39,13 @@ def answer_question(
     llm_client: "LLMClient",
     settings: "Settings | None" = None,
     paper_id: str | None = None,
+    paper_ids: list[str] | None = None,
 ) -> AnswerResult:
+    # paper_id (single paper) and paper_ids (a chosen subset) are mutually exclusive, same as
+    # search()'s own scoping — paper_id wins if both are somehow passed.
     settings = settings or get_settings()
 
-    sources = search(question, settings, paper_id=paper_id)
+    sources = search(question, settings, paper_id=paper_id, paper_ids=paper_ids)
 
     if not sources:
         return AnswerResult(question=question, answer=None, sources_found=0)
@@ -61,6 +64,7 @@ def answer_question_streaming(
     llm_client: "LLMClient",
     settings: "Settings | None" = None,
     paper_id: str | None = None,
+    paper_ids: list[str] | None = None,
 ) -> "StreamingAnswer | None":
     # Streaming variant of answer_question for the web app: does the same retrieval and builds
     # the same prompt, but returns a token iterator to render live instead of the finished
@@ -70,7 +74,7 @@ def answer_question_streaming(
     # equivalent to answer_question().
     settings = settings or get_settings()
 
-    sources = search(question, settings, paper_id=paper_id)
+    sources = search(question, settings, paper_id=paper_id, paper_ids=paper_ids)
     if not sources:
         return None
 

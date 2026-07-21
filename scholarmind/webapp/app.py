@@ -137,7 +137,11 @@ def render_sidebar(settings: "Settings") -> None:
             ["user", "group"],
             index=0 if settings.zotero_library_type != "group" else 1,
         )
+
         st.session_state["zotero_library_type_override"] = zotero_type_input
+
+        st.divider()
+        st.caption("Powered by [Agentica AI Labs](https://agenticaailabs.com)")
 
 
 def render_ingest_panel(settings: "Settings") -> None:
@@ -360,7 +364,7 @@ def render_answer(
 
 
 def _stream_answer(
-    question: str, settings: "Settings", paper_id: str | None
+    question: str, settings: "Settings", paper_ids: list[str] | None
 ) -> tuple["AnswerResult | None", "FormattedAndVerifiedAnswer | None"]:
     # Streams the answer token-by-token into the current chat bubble, then verifies. Must be
     # called inside a `with st.chat_message("assistant"):` block. The tokens are the answer's
@@ -375,7 +379,9 @@ def _stream_answer(
             "Searching your library… (the first question also loads the retrieval models, "
             "which can take a minute)"
         ):
-            streaming = answer_question_streaming(question, client, settings, paper_id=paper_id)
+            streaming = answer_question_streaming(
+                question, client, settings, paper_ids=paper_ids
+            )
 
         if streaming is None:
             answer_result = AnswerResult(question=question, answer=None, sources_found=0)
@@ -428,15 +434,21 @@ def _paper_picker(
 def render_chat_panel(settings: "Settings") -> None:
     st.subheader("Ask")
 
-    if not list_papers(settings):
+    papers = list_papers(settings)
+    if not papers:
         st.info(
             "Your library is empty. Open the **Library** page to upload and ingest a PDF, "
             "then come back here to ask questions grounded in it.",
             icon=":material/library_books:",
         )
 
-    scope = _paper_picker(settings, "Scope", "ask_scope_choice", none_option_label="All papers")
-    scope_paper_id = scope.paper_id if scope is not None else None
+    scope_papers = st.multiselect(
+        "Scope (leave empty for all papers)",
+        papers,
+        format_func=lambda p: f"{p.label} ({p.chunk_count} chunk(s))",
+        key="ask_scope_papers",
+    )
+    scope_paper_ids = [p.paper_id for p in scope_papers] or None
 
     if "messages" not in st.session_state:
         st.session_state["messages"] = []
@@ -464,7 +476,7 @@ def render_chat_panel(settings: "Settings") -> None:
             )
             answer_result, formatted = None, None
         else:
-            answer_result, formatted = _stream_answer(question, settings, scope_paper_id)
+            answer_result, formatted = _stream_answer(question, settings, scope_paper_ids)
 
     st.session_state["messages"].append(
         {"role": "assistant", "answer_result": answer_result, "formatted": formatted}

@@ -14,8 +14,10 @@ from scholarmind.citations.verify import Citation, VerifiedAnswer
 from scholarmind.cli import _print_answer_result, app
 from scholarmind.config import Settings, get_settings
 from scholarmind.ingestion.pipeline import run_ingestion
+from scholarmind.retrieval.papers import list_papers
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "sample_paper.pdf"
+TIDAL_FIXTURE_PATH = Path(__file__).parent / "fixtures" / "sample_paper_2.pdf"
 
 _has_llm_key = bool(get_settings().llm_api_key)
 
@@ -92,6 +94,55 @@ def test_answer_question_with_out_of_range_citation(tmp_path: Path):
     assert result.answer.invalid_citation_markers == [99]
     assert len(result.answer.citations) == 1
     assert result.answer.citations[0].index == 1
+
+
+def test_answer_question_with_paper_ids_scopes_to_chosen_papers(tmp_path: Path):
+    # Regression test for multi-paper scoping in the Ask flow: paper_ids should behave like
+    # search()'s own paper_ids param, restricting sources to the chosen subset — here, an
+    # on-topic query scoped to just the RAG paper out of a two-paper library.
+    settings = Settings(
+        qdrant_path=str(tmp_path / "qdrant"),
+        qdrant_collection="test_qa_paper_ids_chunks",
+    )
+    run_ingestion(FIXTURE_PATH, settings)
+    run_ingestion(TIDAL_FIXTURE_PATH, settings)
+
+    rag_paper_id = next(
+        p.paper_id for p in list_papers(settings) if "Retrieval-Augmented Generation" in p.label
+    )
+
+    fake_client = FakeLLMClient("RAG grounds answers in sources [1].")
+    result = answer_question(
+        "What does RAG do?", fake_client, settings, paper_ids=[rag_paper_id]
+    )
+
+    assert result.sources_found > 0
+    assert result.answer is not None
+    assert all(c.paper_id == rag_paper_id for c in result.answer.citations)
+
+
+def test_answer_question_streaming_with_paper_ids_scopes_to_chosen_papers(tmp_path: Path):
+    settings = Settings(
+        qdrant_path=str(tmp_path / "qdrant"),
+        qdrant_collection="test_qa_stream_paper_ids_chunks",
+    )
+    run_ingestion(FIXTURE_PATH, settings)
+    run_ingestion(TIDAL_FIXTURE_PATH, settings)
+
+    rag_paper_id = next(
+        p.paper_id for p in list_papers(settings) if "Retrieval-Augmented Generation" in p.label
+    )
+
+    streaming = answer_question_streaming(
+        "What does RAG do?",
+        FakeStreamingLLMClient(["irrelevant"]),
+        settings,
+        paper_ids=[rag_paper_id],
+    )
+
+    assert streaming is not None
+    assert len(streaming.sources) > 0
+    assert all(source.paper_id == rag_paper_id for source in streaming.sources)
 
 
 def test_answer_question_streaming_returns_none_without_calling_llm_when_no_sources(tmp_path: Path):
